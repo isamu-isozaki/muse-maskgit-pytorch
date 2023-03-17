@@ -179,10 +179,12 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
             if self.use_ema:
                 ema_model.update()
             logs = {"loss": train_loss, "lr": self.lr_scheduler.get_last_lr()[0]}
-            self.print(
-                f"{steps}: maskgit loss: {logs['loss']} - lr: {self.lr_scheduler.get_last_lr()[0]}"
-            )
+            #self.print(
+                #f"{steps}: maskgit loss: {logs['loss']} - lr: {self.lr_scheduler.get_last_lr()[0]}"
+            #)
             self.accelerator.log(logs, steps)
+
+            logs['save_model_every'] = ''
             if steps % self.save_model_every == 0:
                 state_dict = self.accelerator.unwrap_model(self.model).state_dict()
                 maskgit_save_name = (
@@ -209,7 +211,10 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
                     model_path = str(self.results_dir / file_name)
                     self.accelerator.save(ema_state_dict, model_path)
 
-                self.print(f"{steps}: saving model to {str(self.results_dir)}")
+                #self.print(f"{steps}: saving model to {str(self.results_dir)}")
+                logs['save_model_every'] = f"{steps}: saving model to {str(self.results_dir)}"
+
+            logs['save_results_every'] = ''
             if steps % self.save_results_every == 0:
                 cond_image = None
                 if self.model.cond_image_size:
@@ -221,6 +226,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
                 self.log_validation_images(
                     self.validation_prompts, self.steps, cond_image=cond_image
                 )
-                self.print(f"{steps}: saving to {str(self.results_dir)}")
+                #self.print(f"{steps}: saving to {str(self.results_dir)}")
+                logs['save_results_every'] = f"{steps}: saving to {str(self.results_dir)}"
 
             return logs

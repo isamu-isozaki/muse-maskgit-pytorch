@@ -275,9 +275,9 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # log
 
-        self.print(
-            f"{steps}: vae loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {self.lr_scheduler.get_last_lr()[0]}"
-        )
+        #self.print(
+            #f"{steps}: vae loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {self.lr_scheduler.get_last_lr()[0]}"
+        #)
         logs["lr"] = self.lr_scheduler.get_last_lr()[0]
         self.accelerator.log(logs, step=steps)
 
@@ -287,7 +287,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             ema_model.update()
 
         # sample results every so often
-
+        logs['save_results_every'] = ''
         if (steps % self.save_results_every) == 0:
             vaes_to_evaluate = ((self.model, str(steps)),)
 
@@ -297,9 +297,11 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 ) + vaes_to_evaluate
 
             self.log_validation_images(vaes_to_evaluate, logs, steps)
-            self.print(f"{steps}: saving to {str(self.results_dir)}")
+            #self.print(f"{steps}: saving to {str(self.results_dir)}")
+            logs['save_results_every'] = f"{steps}: saving to {str(self.results_dir)}"
 
         # save model every so often
+        logs['save_model_every'] = ''
         self.accelerator.wait_for_everyone()
         if self.is_main and (steps % self.save_model_every) == 0:
             state_dict = self.accelerator.unwrap_model(self.model).state_dict()
@@ -321,7 +323,8 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 model_path = str(self.results_dir / file_name)
                 self.accelerator.save(ema_state_dict, model_path)
 
-            self.print(f"{steps}: saving model to {str(self.results_dir)}")
+            #self.print(f"{steps}: saving model to {str(self.results_dir)}")
+            logs['save_model_every'] =  f"{steps}: saving model to {str(self.results_dir)}"
 
         self.steps += 1
         return logs

@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from accelerate import Accelerator, DistributedType, DistributedDataParallelKwargs
 
 from ema_pytorch import EMA
+from tqdm import tqdm
 
 
 import numpy as np
@@ -240,8 +241,31 @@ class BaseAcceleratedTrainer(nn.Module):
 
     def train(self, log_fn=noop):
         self.model.train()
+
+        # create two tqdm objects, one for showing the progress bar
+        # and another one for showing any extra information we want to show on a different line.
+        pbar = tqdm(initial=int(self.steps.item()), total=self.num_train_steps)
+        info_bar = tqdm(total=0, bar_format='{desc}')
+
         while self.steps < self.num_train_steps:
             with self.accelerator.autocast():
                 logs = self.train_step()
             log_fn(logs)
+
+            # update the tqdm progress bar
+            pbar.update(1)
+
+            # show some extra information on the tqdm progress bar.
+            #pbar.set_postfix_str(f"Step: {int(self.steps.item())}")
+            try:
+                info_bar.set_description_str(f"Loss: {logs['loss']}, lr: {logs['lr']}")
+                print(logs['save_model_every']) if logs['save_model_every'] else None
+                print(logs['save_results_every']) if logs['save_model_every'] else None
+            except KeyError:
+                info_bar.set_description_str(f"VAE loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {logs['lr']}")
+                print(logs['save_model_every']) if logs['save_model_every'] else None
+                print(logs['save_results_every']) if logs['save_model_every'] else None
+
+        # close the progress bar as we no longer need it.
+        pbar.close()
         self.print("training complete")
