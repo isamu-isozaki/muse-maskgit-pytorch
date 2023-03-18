@@ -121,6 +121,7 @@ class BaseAcceleratedTrainer(nn.Module):
         only_save_last_checkpoint=False,
         use_profiling=False,
         profile_frequency=1,
+        row_limit=10,
     ):
         super().__init__()
         self.model = None
@@ -154,6 +155,7 @@ class BaseAcceleratedTrainer(nn.Module):
 
         self.use_profiling = use_profiling
         self.profile_frequency =  profile_frequency
+        self.row_limit = row_limit
 
     def save(self, path):
         if not self.is_local_main_process:
@@ -287,7 +289,7 @@ class BaseAcceleratedTrainer(nn.Module):
                         prof.__exit__(None, None, None)
                         # show the information on the console using loguru as it provides better formating and we can later add colors for easy reading.
                         from loguru import logger
-                        logger.info(prof.key_averages().table(sort_by='cpu_time_total'))
+                        logger.info(prof.key_averages().table(sort_by='cpu_time_total', row_limit=self.row_limit))
                         # save the trace.json file with the information we gathered during this training step,
                         # we can use this trace.json file on the chrome tracing page or other similar tool to view more information.
                         prof.export_chrome_trace(f'{self.logging_dir}/trace.json')

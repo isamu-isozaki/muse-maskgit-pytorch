@@ -266,6 +266,12 @@ def parse_args():
         default=1,
         help="Number of steps that will be used as interval for saving the profile from Pytorch's built-in profiler.",
     )
+    parser.add_argument(
+        "--row_limit",
+        type=int,
+        default=10,
+        help="Number of rows that will be shown when using Pytorch's built-in profiler.",
+    )
     # Parse the argument
     return parser.parse_args()
 
@@ -397,6 +403,7 @@ def main():
         only_save_last_checkpoint=args.only_save_last_checkpoint,
         use_profiling=args.use_profiling,
         profile_frequency=args.profile_frequency,
+        row_limit=args.row_limit,
         optimizer=args.optimizer,
         weight_decay=args.weight_decay,
     )

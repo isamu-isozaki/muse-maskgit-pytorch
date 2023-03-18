@@ -74,6 +74,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         only_save_last_checkpoint=False,
         use_profiling=False,
         profile_frequency=1,
+        row_limit=10,
         optimizer="Adam",
         weight_decay=0.0,
     ):
@@ -95,6 +96,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             only_save_last_checkpoint=only_save_last_checkpoint,
             use_profiling=use_profiling,
             profile_frequency=profile_frequency,
+            row_limit=row_limit,
         )
 
         # vae
