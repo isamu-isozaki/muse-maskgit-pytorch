@@ -178,7 +178,7 @@ class BaseAcceleratedTrainer(nn.Module):
 
     def log_validation_images(self, images, step, prompts=None):
         if prompts:
-            self.print(f"Logging with prompts: {prompts}")
+            self.print(f"\nStep: {step} | Logging with prompts: {prompts}")
         if self.validation_image_scale != 1:
             # Feel free to make pr for better solution!
             output_size = (

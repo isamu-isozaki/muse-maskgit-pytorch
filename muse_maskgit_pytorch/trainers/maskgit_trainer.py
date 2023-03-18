@@ -216,7 +216,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
                     self.accelerator.save(ema_state_dict, model_path)
 
                 #self.print(f"{steps}: saving model to {str(self.results_dir)}")
-                logs['save_model_every'] = f"{steps}: saving model to {str(self.results_dir)}"
+                logs['save_model_every'] = f"\nStep: {steps} | Saving model to {str(self.results_dir)}"
 
             logs['save_results_every'] = ''
             if steps % self.save_results_every == 0:

@@ -302,7 +302,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
             self.log_validation_images(vaes_to_evaluate, logs, steps)
             #self.print(f"{steps}: saving to {str(self.results_dir)}")
-            logs['save_results_every'] = f"{steps}: saving to {str(self.results_dir)}"
+            logs['save_results_every'] = f"\nStep: {steps} | Saving to {str(self.results_dir)}"
 
         # save model every so often
         logs['save_model_every'] = ''
@@ -328,7 +328,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 self.accelerator.save(ema_state_dict, model_path)
 
             #self.print(f"{steps}: saving model to {str(self.results_dir)}")
-            logs['save_model_every'] =  f"{steps}: saving model to {str(self.results_dir)}"
+            logs['save_model_every'] =  f"\nStep: {steps} | Saving model to {str(self.results_dir)}"
 
         self.steps += 1
         return logs
