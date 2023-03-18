@@ -52,6 +52,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
         clear_previous_experiments=False,
         validation_image_scale=1,
         only_save_last_checkpoint=False,
+        use_profiling=False,
         optimizer="Lion",
         weight_decay=0.0,
     ):
@@ -71,6 +72,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
             clear_previous_experiments=clear_previous_experiments,
             validation_image_scale=validation_image_scale,
             only_save_last_checkpoint=only_save_last_checkpoint,
+            use_profiling=use_profiling,
         )
         self.save_results_every = save_results_every
         self.batch_size = batch_size

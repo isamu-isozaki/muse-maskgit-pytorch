@@ -218,6 +218,11 @@ def parse_args():
         default=0.0,
         help="Optimizer weight_decay to use. Default: 0.0",
     )
+    parser.add_argument(
+        "--use_profiling",
+        action="store_true",
+        help="Use Pytorch's built-in profiler to gather information about the training which can help improve speed by checking the impact some options have on the training when enabled.",
+    )
     # Parse the argument
     return parser.parse_args()
 
@@ -315,6 +320,7 @@ def main():
         clear_previous_experiments=args.clear_previous_experiments,
         validation_image_scale=args.validation_image_scale,
         only_save_last_checkpoint=args.only_save_last_checkpoint,
+        use_profiling=args.use_profiling,
         optimizer=args.optimizer,
     )
 
