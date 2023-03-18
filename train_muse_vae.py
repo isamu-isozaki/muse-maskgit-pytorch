@@ -223,6 +223,12 @@ def parse_args():
         action="store_true",
         help="Use Pytorch's built-in profiler to gather information about the training which can help improve speed by checking the impact some options have on the training when enabled.",
     )
+    parser.add_argument(
+        "--profile_frequency",
+        type=int,
+        default=1,
+        help="Number of steps that will be used as interval for saving the profile from Pytorch's built-in profiler.",
+    )
     # Parse the argument
     return parser.parse_args()
 
@@ -321,6 +327,7 @@ def main():
         validation_image_scale=args.validation_image_scale,
         only_save_last_checkpoint=args.only_save_last_checkpoint,
         use_profiling=args.use_profiling,
+        profile_frequency=args.profile_frequency,
         optimizer=args.optimizer,
     )
 

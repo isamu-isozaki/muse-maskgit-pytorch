@@ -119,6 +119,8 @@ class BaseAcceleratedTrainer(nn.Module):
         clear_previous_experiments=False,
         validation_image_scale=1,
         only_save_last_checkpoint=False,
+        use_profiling=False,
+        profile_frequency=1,
     ):
         super().__init__()
         self.model = None
@@ -149,6 +151,9 @@ class BaseAcceleratedTrainer(nn.Module):
         self.save_results_every = save_results_every
 
         self.apply_grad_penalty_every = apply_grad_penalty_every
+
+        self.use_profiling = use_profiling
+        self.profile_frequency =  profile_frequency
 
     def save(self, path):
         if not self.is_local_main_process:
@@ -246,25 +251,50 @@ class BaseAcceleratedTrainer(nn.Module):
         # and another one for showing any extra information we want to show on a different line.
         pbar = tqdm(initial=int(self.steps.item()), total=self.num_train_steps)
         info_bar = tqdm(total=0, bar_format='{desc}')
+        #profiling_bar = tqdm(total=0, bar_format='{desc}')
+
+
+        # use pytorch built-in profiler to gather information on the training for improving performance later.
+        #with torch.autograd.profiler.profile(use_cuda=True) as prof:
+        if self.use_profiling:
+            prof = torch.autograd.profiler.profile(use_cuda=True)
+            prof.__enter__()
+            counter = 1
 
         while self.steps < self.num_train_steps:
-            with self.accelerator.autocast():
-                logs = self.train_step()
-            log_fn(logs)
+                with self.accelerator.autocast():
+                    logs = self.train_step()
+                log_fn(logs)
 
-            # update the tqdm progress bar
-            pbar.update(1)
+                # update the tqdm progress bar
+                pbar.update(1)
 
-            # show some extra information on the tqdm progress bar.
-            #pbar.set_postfix_str(f"Step: {int(self.steps.item())}")
-            try:
-                info_bar.set_description_str(f"Loss: {logs['loss']}, lr: {logs['lr']}")
-                print(logs['save_model_every']) if logs['save_model_every'] else None
-                print(logs['save_results_every']) if logs['save_model_every'] else None
-            except KeyError:
-                info_bar.set_description_str(f"VAE loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {logs['lr']}")
-                print(logs['save_model_every']) if logs['save_model_every'] else None
-                print(logs['save_results_every']) if logs['save_model_every'] else None
+                # show some extra information on the tqdm progress bar.
+                #pbar.set_postfix_str(f"Step: {int(self.steps.item())}")
+                try:
+                    info_bar.set_description_str(f"Loss: {logs['loss']}, lr: {logs['lr']}")
+                    print(logs['save_model_every']) if logs['save_model_every'] else None
+                    print(logs['save_results_every']) if logs['save_model_every'] else None
+                except KeyError:
+                    info_bar.set_description_str(f"VAE loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {logs['lr']}")
+                    print(logs['save_model_every']) if logs['save_model_every'] else None
+                    print(logs['save_results_every']) if logs['save_model_every'] else None
+
+                if self.use_profiling:
+                    counter += 1
+                    if counter == self.profile_frequency:
+                        # in order to use export_chrome_trace we need to first stop the profiler
+                        prof.__exit__(None, None, None)
+                        # show the information on the console using loguru as it provides better formating and we can later add colors for easy reading.
+                        from loguru import logger
+                        logger.info(prof.key_averages().table(sort_by='cpu_time_total'))
+                        # save the trace.json file with the information we gathered during this training step,
+                        # we can use this trace.json file on the chrome tracing page or other similar tool to view more information.
+                        prof.export_chrome_trace(f'{self.logging_dir}/trace.json')
+                        # then we can restart it to continue reusing the same profiler.
+                        prof = torch.autograd.profiler.profile(use_cuda=True)
+                        prof.__enter__()
+                        counter = 1 # Reset step counter
 
         # close the progress bar as we no longer need it.
         pbar.close()
