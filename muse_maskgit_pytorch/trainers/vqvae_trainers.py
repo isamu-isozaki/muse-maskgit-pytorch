@@ -101,6 +101,8 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             row_limit=row_limit,
         )
 
+        self.current_step = current_step
+
         # vae
         self.model = vae
 
@@ -296,43 +298,45 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # sample results every so often
         logs['save_results_every'] = ''
-        if (steps % self.save_results_every) == 0:
-            vaes_to_evaluate = ((self.model, str(steps)),)
+        if (steps % self.save_results_every) == 1:
+            vaes_to_evaluate = ((self.model, str(steps - 1)),)
 
             if self.use_ema:
                 vaes_to_evaluate = (
-                    (ema_model.ema_model, f"{steps}.ema"),
+                    (ema_model.ema_model, f"{steps - 1}.ema"),
                 ) + vaes_to_evaluate
 
-            self.log_validation_images(vaes_to_evaluate, logs, steps)
+            self.log_validation_images(vaes_to_evaluate, logs, steps - 1)
             #self.print(f"{steps}: saving to {str(self.results_dir)}")
-            logs['save_results_every'] = f"\nStep: {steps} | Saving to {str(self.results_dir)}"
+            logs['save_results_every'] = f"\nStep: {steps - 1} | Saving to {str(self.results_dir)}"
 
         # save model every so often
         logs['save_model_every'] = ''
         self.accelerator.wait_for_everyone()
-        if self.is_main and (steps % self.save_model_every) == 0:
-            state_dict = self.accelerator.unwrap_model(self.model).state_dict()
-            file_name = (
-                f"vae.{steps}.pt" if not self.only_save_last_checkpoint else "vae.pt"
-            )
-            model_path = str(self.results_dir / file_name)
-            self.accelerator.save(state_dict, model_path)
-
-            if self.use_ema:
-                ema_state_dict = self.accelerator.unwrap_model(
-                    self.ema_model
-                ).state_dict()
+        if steps != self.current_step:
+            if self.is_main and (steps % self.save_model_every) == 1:
+                state_dict = self.accelerator.unwrap_model(self.model).state_dict()
                 file_name = (
-                    f"vae.{steps}.ema.pt"
-                    if not self.only_save_last_checkpoint
-                    else "vae.ema.pt"
+                    f"vae.{steps - 1}.pt" if not self.only_save_last_checkpoint else "vae.pt"
                 )
                 model_path = str(self.results_dir / file_name)
-                self.accelerator.save(ema_state_dict, model_path)
+                self.accelerator.save(state_dict, model_path)
 
-            #self.print(f"{steps}: saving model to {str(self.results_dir)}")
-            logs['save_model_every'] =  f"\nStep: {steps} | Saving model to {str(self.results_dir)}"
+                if self.use_ema:
+                    ema_state_dict = self.accelerator.unwrap_model(
+                        self.ema_model
+                    ).state_dict()
+                    file_name = (
+                        f"vae.{steps -1}.ema.pt"
+                        if not self.only_save_last_checkpoint
+                        else "vae.ema.pt"
+                    )
+                    model_path = str(self.results_dir / file_name)
+                    self.accelerator.save(ema_state_dict, model_path)
 
-        self.steps += 1
+                #self.print(f"{steps}: saving model to {str(self.results_dir)}")
+                logs['save_model_every'] =  f"\nStep: {steps - 1} | Saving model to {str(self.results_dir)}"
+
+        self.steps = self.steps + (self.batch_size * self.gradient_accumulation_steps)
+
         return logs
