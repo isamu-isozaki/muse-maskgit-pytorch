@@ -370,6 +370,7 @@ def main():
         caption_column=args.caption_column,
         center_crop=not args.no_center_crop,
         flip=not args.no_flip,
+        using_taming=True if args.taming_model_path else False,
     )
     dataloader, validation_dataloader = split_dataset_into_dataloaders(
         dataset, args.valid_frac, args.seed, args.batch_size

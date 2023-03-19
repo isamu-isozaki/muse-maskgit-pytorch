@@ -17,7 +17,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ImageDataset(Dataset):
     def __init__(
-        self, dataset, image_size, image_column="image", flip=True, center_crop=True
+        self, dataset, image_size, image_column="image", flip=True, center_crop=True, using_taming=False,
     ):
         super().__init__()
         self.dataset = dataset
@@ -33,12 +33,17 @@ class ImageDataset(Dataset):
         transform_list.append(T.ToTensor())
         self.transform = T.Compose(transform_list)
 
+        self.using_taming = using_taming
+
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index):
         image = self.dataset[index][self.image_column]
-        return self.transform(image)-0.5
+        if self.using_taming:
+            return self.transform(image)-0.5
+        else:
+            return self.transform(image)
 
 
 class ImageTextDataset(ImageDataset):
@@ -51,6 +56,7 @@ class ImageTextDataset(ImageDataset):
         caption_column=None,
         flip=True,
         center_crop=True,
+        using_taming=False,
     ):
         super().__init__(
             dataset,
@@ -58,6 +64,7 @@ class ImageTextDataset(ImageDataset):
             image_column=image_column,
             flip=flip,
             center_crop=center_crop,
+            using_taming=using_taming,
         )
         self.caption_column = caption_column
         self.tokenizer = tokenizer
@@ -126,14 +133,14 @@ def get_dataset_from_dataroot(
         else:
             print ("The data_root folder has being updated recently. Removing previously saved dataset and updating it.")
             os.removedirs(save_path)
-    
-    
+
+
     extensions = ["jpg", "jpeg", "png", "webp"]
     image_paths = []
-    
+
     for ext in extensions:
-        image_paths.extend(list(Path(data_root).rglob(f"*.{ext}")))    
-    
+        image_paths.extend(list(Path(data_root).rglob(f"*.{ext}")))
+
     random.shuffle(image_paths)
     data_dict = {image_column: [], caption_column: []}
     for image_path in tqdm(image_paths):

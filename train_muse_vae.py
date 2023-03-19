@@ -301,6 +301,7 @@ def main():
         image_column=args.image_column,
         center_crop=not args.no_center_crop,
         flip=not args.no_flip,
+        using_taming=True if args.taming_model_path else False,
     )
     # dataloader
 
@@ -328,6 +329,7 @@ def main():
         ema_update_after_step=args.ema_update_after_step,
         ema_update_every=args.ema_update_every,
         apply_grad_penalty_every=args.apply_grad_penalty_every,
+        batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         clear_previous_experiments=args.clear_previous_experiments,
         validation_image_scale=args.validation_image_scale,
