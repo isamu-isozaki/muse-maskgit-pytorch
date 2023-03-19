@@ -5,7 +5,7 @@ from pathlib import Path
 from muse_maskgit_pytorch.t5 import MAX_LENGTH
 import datasets
 from datasets import Image, load_from_disk
-import random
+import random, shutil
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import os, time, sys
@@ -132,7 +132,7 @@ def get_dataset_from_dataroot(
             return load_from_disk(save_path)
         else:
             print ("The data_root folder has being updated recently. Removing previously saved dataset and updating it.")
-            os.removedirs(save_path)
+            shutil.rmtree(save_path, ignore_errors=True)
 
 
     extensions = ["jpg", "jpeg", "png", "webp"]
