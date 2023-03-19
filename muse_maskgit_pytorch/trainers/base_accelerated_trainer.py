@@ -115,6 +115,7 @@ class BaseAcceleratedTrainer(nn.Module):
         results_dir="./results",
         logging_dir="./results/logs",
         apply_grad_penalty_every=4,
+        batch_size=1,
         gradient_accumulation_steps=1,
         clear_previous_experiments=False,
         validation_image_scale=1,
@@ -126,6 +127,7 @@ class BaseAcceleratedTrainer(nn.Module):
         super().__init__()
         self.model = None
         # instantiate accelerator
+        self.batch_size = batch_size
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.accelerator = accelerator
         self.results_dir = Path(results_dir)
@@ -269,7 +271,7 @@ class BaseAcceleratedTrainer(nn.Module):
                 log_fn(logs)
 
                 # update the tqdm progress bar
-                pbar.update(1)
+                pbar.update(self.batch_size * self.gradient_accumulation_steps)
 
                 # show some extra information on the tqdm progress bar.
                 #pbar.set_postfix_str(f"Step: {int(self.steps.item())}")

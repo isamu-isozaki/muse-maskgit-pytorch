@@ -64,6 +64,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
             accelerator,
             current_step=current_step,
             num_train_steps=num_train_steps,
+            batch_size=batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
             max_grad_norm=max_grad_norm,
             save_results_every=save_results_every,
