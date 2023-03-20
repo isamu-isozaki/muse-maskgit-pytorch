@@ -35,6 +35,8 @@ setup(
         "tqdm",
         "vector-quantize-pytorch>=0.10.14",
         "lion-pytorch",
+        "einops",
+        "pytorch-lightning<1.8.0"
     ],
     classifiers=[
         "Development Status :: 4 - Beta",

@@ -22,6 +22,12 @@ import argparse
 def parse_args():
     # Create the parser
     parser = argparse.ArgumentParser()
+    parser.add_argument("--layers", type=int, default=4, help="Number of layers used for encoding/decoding.")
+    parser.add_argument("--discr_layers", type=int, default=4, help="Number of layers used for the discriminator.")
+    parser.add_argument(
+        "--enc_dec_class_name", type=str, default="ResnetEncDec", choices=["ResnetEncDec", "TimmFeatureEncDec", "HuggingfaceEncDec"], 
+        help="Architecture used for encoding/decoding"
+    )
     parser.add_argument(
         "--webdataset", type=str, default=None, help="Path to webdataset if using one."
     )
@@ -253,7 +259,7 @@ def main():
     elif args.dataset_name:
         dataset = load_dataset(args.dataset_name)["train"]
 
-    vae = VQGanVAE(dim=args.dim, vq_codebook_size=args.vq_codebook_size)
+    vae = VQGanVAE(layers=args.layers, discr_layers=args.discr_layers, dim=args.dim, vq_codebook_size=args.vq_codebook_size, enc_dec_class_name=args.enc_dec_class_name,)
     if args.taming_model_path:
         print("Loading Taming VQGanVAE")
         vae = VQGanVAETaming(

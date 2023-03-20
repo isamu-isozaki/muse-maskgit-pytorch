@@ -10,6 +10,7 @@ import torch
 from torch import nn, einsum
 import torch.nn.functional as F
 from torch.autograd import grad as torch_grad
+from typing import Optional, Tuple, Union
 
 import torchvision
 
@@ -17,7 +18,8 @@ from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange
 import timm
 from diffusers.models.vae import Encoder, Decoder
-
+import warnings
+from muse_maskgit_pytorch.wavelet import WaveletEncode2d, WaveletDecode2d
 # constants
 
 MList = nn.ModuleList
@@ -224,13 +226,14 @@ class ResnetEncDec(nn.Module):
     def __init__(
         self,
         dim,
-        *,
+        *args,
         channels=3,
         layers=4,
         layer_mults=None,
         num_resnet_blocks=1,
         resnet_groups=16,
         first_conv_kernel_size=5,
+        **kwargs
     ):
         super().__init__()
         assert (
@@ -305,6 +308,7 @@ class ResnetEncDec(nn.Module):
     def encode(self, x):
         for enc in self.encoders:
             x = enc(x)
+            print(x.shape)
         return x
 
     def decode(self, x):
@@ -347,20 +351,21 @@ class ResBlock(nn.Module):
         return self.net(x) + x
 
 
-class TimmFeatureEncDec(nn.Module):
-    def __init__(self, backbone="convnext_base"):
+class TimmFeatureEncDec(ResnetEncDec):
+    def __init__(self, *args, backbone="convnext_large", timm_grad=False, **kwargs):
+        super().__init__(*args, **kwargs)
         self.timm_model = timm.create_model(
             backbone,
             pretrained=True,
             features_only=True,
             exportable=True,
-            out_indices=self.idx,
         )
-        return
+        self.timm_model.requires_grad = timm_grad
 
     def encode(self, x):
+        features = self.timm_model.forward_features(x)
         for enc in self.encoders:
-            x = enc(x)
+            x = enc(features)
         return x
 
     def decode(self, x):
@@ -370,24 +375,69 @@ class TimmFeatureEncDec(nn.Module):
 
 
 class HuggingfaceEncDec(nn.Module):
-    def __init__(self):
-        return
+    def __init__(self, *args, in_channels: int = 3,
+            out_channels: int = 3,
+            down_block_types: Tuple[str] = ("DownEncoderBlock2D",),
+            up_block_types: Tuple[str] = ("UpDecoderBlock2D",),
+            block_out_channels: Tuple[int] = (64,),
+            layers_per_block: int = 1,
+            act_fn: str = "silu",
+            latent_channels: int = 3,
+            sample_size: int = 32,
+            num_vq_embeddings: int = 256,
+            norm_num_groups: int = 32,
+            vq_embed_dim: Optional[int] = None,
+            scaling_factor: float = 0.18215, **kwargs):
+        super().__init__()
+        self.encoder = Encoder(
+            in_channels=in_channels,
+            out_channels=latent_channels,
+            down_block_types=down_block_types,
+            block_out_channels=block_out_channels,
+            layers_per_block=layers_per_block,
+            act_fn=act_fn,
+            norm_num_groups=norm_num_groups,
+            double_z=True,
+        )
 
-    def forward(self):
-        return
+        # pass init params to Decoder
+        self.decoder = Decoder(
+            in_channels=latent_channels,
+            out_channels=out_channels,
+            up_block_types=up_block_types,
+            block_out_channels=block_out_channels,
+            layers_per_block=layers_per_block,
+            norm_num_groups=norm_num_groups,
+            act_fn=act_fn,
+        )
+        self.quant_conv = nn.Conv2d(latent_channels, vq_embed_dim, 1)
+        self.post_quant_conv = nn.Conv2d(vq_embed_dim, latent_channels, 1)
 
+    def encode(self, x):
+        h = self.encoder(x)
+        h = self.quant_conv(h)
+        return h
 
-class WaveletTransformerEncDec(nn.Module):
-    def __init__(self):
-        return
+    def decode(self, quant):
+        quant = self.post_quant_conv(quant)
+        dec = self.decoder(quant)
+        return dec
 
-    def forward(self):
-        return
-
+class VITEncDec:
+    def __init__(self, *args, **kwargs):
+        None
 
 # main vqgan-vae classes
-
-
+def get_enc_dec(enc_dec_class_name):
+    if enc_dec_class_name == "ResnetEncDec":
+        func = ResnetEncDec
+    elif enc_dec_class_name == "TimmFeatureEncDec":
+        func = TimmFeatureEncDec
+    elif enc_dec_class_name == "HuggingfaceEncDec":
+        func = HuggingfaceEncDec
+    else:
+        raise NotImplementedError("Encoder not implemented")
+    return func
 class VQGanVAE(nn.Module):
     def __init__(
         self,
@@ -406,6 +456,7 @@ class VQGanVAE(nn.Module):
         vq_use_cosine_sim=True,
         use_vgg_and_gan=True,
         discr_layers=4,
+        enc_dec_class_name="ResnetEncDec",
         timm_backend=None,
         **kwargs,
     ):
@@ -417,7 +468,7 @@ class VQGanVAE(nn.Module):
         self.codebook_size = vq_codebook_size
         self.dim_divisor = 2**layers
 
-        enc_dec_klass = ResnetEncDec
+        enc_dec_klass = get_enc_dec(enc_dec_class_name)
 
         self.enc_dec = enc_dec_klass(
             dim=dim, channels=channels, layers=layers, **encdec_kwargs
