@@ -213,11 +213,11 @@ def main():
 
     os.makedirs(f"{args.results_dir}/outputs", exist_ok=True)
 
-    save_image(dataset[image_id], f"{args.results_dir}/outputs/input.png")
+    save_image(dataset[image_id], f"{args.results_dir}/outputs/input.{str(args.input_image).split('.')[-1]}")
 
     _, ids, _ = vae.encode(dataset[image_id][None].to(accelerator.device))
     recon = vae.decode_from_ids(ids)
-    save_image(recon, f"{args.results_dir}/outputs/output.png")
+    save_image(recon, f"{args.results_dir}/outputs/output.{str(args.input_image).split('.')[-1]}")
 
 
 if __name__ == "__main__":
