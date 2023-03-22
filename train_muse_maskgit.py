@@ -141,11 +141,6 @@ def parse_args():
         help="Precision to train on.",
     )
     parser.add_argument(
-        "--use_8bit_adam",
-        action="store_true",
-        help="Whether to use the 8bit adam optimiser",
-    )
-    parser.add_argument(
         "--results_dir",
         type=str,
         default="results",
@@ -391,7 +386,6 @@ def main():
         only_save_last_checkpoint=args.only_save_last_checkpoint,
         optimizer=args.optimizer,
         weight_decay=args.weight_decay,
-        use_8bit_adam=args.use_8bit_adam
     )
 
     trainer.train()
