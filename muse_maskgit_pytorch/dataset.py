@@ -45,7 +45,6 @@ class ImageDataset(Dataset):
         else:
             return self.transform(image)
 
-
 class ImageTextDataset(ImageDataset):
     def __init__(
         self,
@@ -94,6 +93,7 @@ class ImageTextDataset(ImageDataset):
         attn_mask = encoded.attention_mask
         return self.transform(image), input_ids[0], attn_mask[0]
 
+
 def get_directory_size(path):
     total_size = 0
     for dirpath, dirnames, filenames in os.walk(path):
@@ -101,6 +101,7 @@ def get_directory_size(path):
             fp = os.path.join(dirpath, f)
             total_size += os.path.getsize(fp)
     return total_size
+
 
 def save_dataset_with_progress(dataset, save_path):
     # Estimate the total size of the dataset in bytes
@@ -116,8 +117,11 @@ def save_dataset_with_progress(dataset, save_path):
             if os.path.exists(save_path):
                 size = get_directory_size(save_path)
                 # Update the progress bar based on the current size of the saved file
-                pbar.update(size - pbar.n)  # Update by the difference between current and previous size
+                pbar.update(
+                    size - pbar.n
+                )  # Update by the difference between current and previous size
             time.sleep(1)
+
 
 def get_dataset_from_dataroot(
     data_root, image_column="image", caption_column="caption", save_path="dataset"
@@ -133,7 +137,6 @@ def get_dataset_from_dataroot(
         else:
             print ("The data_root folder has being updated recently. Removing previously saved dataset and updating it.")
             shutil.rmtree(save_path, ignore_errors=True)
-
 
     extensions = ["jpg", "jpeg", "png", "webp"]
     image_paths = []
@@ -158,7 +161,7 @@ def get_dataset_from_dataroot(
         data_dict[caption_column].append(captions)
     dataset = datasets.Dataset.from_dict(data_dict)
     dataset = dataset.cast_column(image_column, Image())
-    #dataset.save_to_disk(save_path)
+    # dataset.save_to_disk(save_path)
     save_dataset_with_progress(dataset, save_path)
     return dataset
 

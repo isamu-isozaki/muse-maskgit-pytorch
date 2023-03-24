@@ -18,6 +18,8 @@ from muse_maskgit_pytorch.dataset import (
 
 import argparse
 
+import torch.nn as nn
+from accelerate import init_empty_weights
 
 def parse_args():
     # Create the parser
@@ -116,6 +118,11 @@ def parse_args():
         help="Precision to train on.",
     )
     parser.add_argument(
+        "--use_8bit_adam",
+        action="store_true",
+        help="Whether to use the 8bit adam optimiser",
+    )
+    parser.add_argument(
         "--results_dir",
         type=str,
         default="results",
@@ -194,12 +201,21 @@ def parse_args():
         help="Path to the last saved checkpoint. 'results/vae.steps.pt'",
     )
     parser.add_argument(
+        "--optimizer",type=str,
+        default='Lion',
+        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion']. Default: Adam",
+    )
+    parser.add_argument(
+        "--weight_decay", type=float,
+        default=0.0,
+        help="Optimizer weight_decay to use. Default: 0.0",
+    )
+    parser.add_argument(
         "--taming_model_path",
         type=str,
         default=None,
         help="path to your trained VQGAN weights. This should be a .ckpt file. (only valid when taming option is enabled)",
     )
-
     parser.add_argument(
         "--taming_config_path",
         type=str,
@@ -313,7 +329,7 @@ def main():
         dataloader,
         validation_dataloader,
         accelerator,
-        current_step=current_step+1 if current_step != 0 else current_step,
+        current_step=current_step + 1 if current_step != 0 else current_step,
         num_train_steps=args.num_train_steps,
         lr=args.lr,
         lr_scheduler_type=args.lr_scheduler,
@@ -338,6 +354,7 @@ def main():
         profile_frequency=args.profile_frequency,
         row_limit=args.row_limit,
         optimizer=args.optimizer,
+        use_8bit_adam=args.use_8bit_adam
     )
 
     trainer.train()

@@ -14,7 +14,6 @@ from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid, save_image
 
-
 from muse_maskgit_pytorch.vqgan_vae import VQGanVAE
 
 from einops import rearrange
@@ -25,6 +24,7 @@ from ema_pytorch import EMA
 import numpy as np
 from muse_maskgit_pytorch.trainers.base_accelerated_trainer import (
     BaseAcceleratedTrainer,
+    get_optimizer,
 )
 from diffusers.optimization import get_scheduler
 
@@ -78,6 +78,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         row_limit=10,
         optimizer="Adam",
         weight_decay=0.0,
+        use_8bit_adam=False
     ):
         super().__init__(
             dataloader,
@@ -111,17 +112,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         vae_parameters = all_parameters - discr_parameters
 
         # optimizers
-        if optimizer == "Adam":
-            self.optim = Adam(vae_parameters, lr=lr, weight_decay=weight_decay)
-            self.discr_optim = Adam(discr_parameters, lr=lr, weight_decay=weight_decay)
-        elif optimizer == "AdamW":
-            self.optim = AdamW(vae_parameters, lr=lr, weight_decay=weight_decay)
-            self.discr_optim = AdamW(discr_parameters, lr=lr)
-        elif optimizer == "Lion":
-            self.optim = Lion(vae_parameters, lr=lr, weight_decay=weight_decay)
-            self.discr_optim = Lion(discr_parameters, lr=lr, weight_decay=weight_decay)
-        else:
-            print(f"{optimizer} optimizer not supported yet.")
+        self.optim = get_optimizer(use_8bit_adam, optimizer, vae_parameters, lr, weight_decay)
 
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,

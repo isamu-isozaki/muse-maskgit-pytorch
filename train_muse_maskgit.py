@@ -141,6 +141,11 @@ def parse_args():
         help="Precision to train on.",
     )
     parser.add_argument(
+        "--use_8bit_adam",
+        action="store_true",
+        help="Whether to use the 8bit adam optimiser",
+    )
+    parser.add_argument(
         "--results_dir",
         type=str,
         default="results",
@@ -381,7 +386,7 @@ def main():
         dataloader,
         validation_dataloader,
         accelerator,
-        current_step=current_step+1 if current_step != 0 else current_step,
+        current_step=current_step + 1 if current_step != 0 else current_step,
         num_train_steps=args.num_train_steps,
         batch_size=args.batch_size,
         lr=args.lr,
@@ -407,6 +412,7 @@ def main():
         row_limit=args.row_limit,
         optimizer=args.optimizer,
         weight_decay=args.weight_decay,
+        use_8bit_adam=args.use_8bit_adam
     )
 
     trainer.train()

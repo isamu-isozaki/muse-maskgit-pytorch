@@ -16,7 +16,8 @@ from accelerate import Accelerator, DistributedType, DistributedDataParallelKwar
 
 from ema_pytorch import EMA
 from tqdm import tqdm
-
+from torch.optim import Adam, AdamW
+from lion_pytorch import Lion
 
 import numpy as np
 
@@ -36,12 +37,10 @@ def noop(*args, **kwargs):
 def identity(t, *args, **kwargs):
     return t
 
-
 def cycle(dl):
     while True:
         for data in dl:
             yield data
-
 
 def cast_tuple(t):
     return t if isinstance(t, (tuple, list)) else (t,)
@@ -50,7 +49,6 @@ def cast_tuple(t):
 def yes_or_no(question):
     answer = input(f"{question} (y/n) ")
     return answer.lower() in ("yes", "y")
-
 
 def pair(val):
     return val if isinstance(val, tuple) else (val, val)
@@ -61,9 +59,7 @@ def convert_image_to_fn(img_type, image):
         return image.convert(img_type)
     return image
 
-
 # image related helpers fnuctions and dataset
-
 
 def get_accelerator(**accelerate_kwargs):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -74,7 +70,6 @@ def get_accelerator(**accelerate_kwargs):
 
     accelerator = Accelerator(**accelerate_kwargs)
     return accelerator
-
 
 def split_dataset(dataset, valid_frac, accelerator, seed=42):
     if valid_frac > 0:
@@ -98,7 +93,32 @@ def split_dataset(dataset, valid_frac, accelerator, seed=42):
 
 # main trainer class
 
+def get_optimizer(use_8bit_adam, optimizer, parameters, lr, weight_decay):
+    if use_8bit_adam:
+        try:
+            import bitsandbytes as bnb
+        except ImportError:  # bitsandbytes raises a broad exception for cuda setup errors
+            raise ImportError("Please install bitsandbytes to use 8-bit optimizers. You can do so by running `pip install "
+                        "bitsandbytes` | Defaulting to non 8-bit equivalent...")
+    # optimizers
+    if optimizer == "Adam":
+        if use_8bit_adam:
+            optim = bnb.optim.Adam8bit(parameters, lr=lr, weight_decay=weight_decay)
+        else:
+            optim = Adam(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdamW":
+        if use_8bit_adam:
+            optim = bnb.optim.AdamW8bit(parameters, lr=lr, weight_decay=weight_decay)
+        else:
+            optim = AdamW(parameters, lr=lr, weight_decay=weight_decay)
 
+    elif optimizer == "Lion":
+        optim = Lion(parameters, lr=lr, weight_decay=weight_decay)
+        if use_8bit_adam:
+            print("8bit is not supported by the Lion optimiser, Using standard Lion instead.")
+    else:
+        raise NotImplementedError(f"{optimizer} optimizer not supported yet.")
+    return optim
 @beartype
 class BaseAcceleratedTrainer(nn.Module):
     def __init__(

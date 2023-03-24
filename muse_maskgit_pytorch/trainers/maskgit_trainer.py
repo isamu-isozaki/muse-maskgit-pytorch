@@ -1,6 +1,3 @@
-from torch.optim import Adam, AdamW
-from lion_pytorch import Lion
-
 from torchvision.utils import save_image
 from PIL import Image
 from muse_maskgit_pytorch.vqgan_vae import VQGanVAE
@@ -11,17 +8,21 @@ from diffusers.optimization import get_scheduler
 from muse_maskgit_pytorch.muse_maskgit_pytorch import MaskGit
 from muse_maskgit_pytorch.trainers.base_accelerated_trainer import (
     BaseAcceleratedTrainer,
+    get_optimizer,
 )
 from muse_maskgit_pytorch.t5 import t5_encode_text_from_encoded
 import torch.nn.functional as F
 
 import os
 
+
 def noop(*args, **kwargs):
     pass
 
+
 def exists(val):
     return val is not None
+
 
 class MaskGitTrainer(BaseAcceleratedTrainer):
     def __init__(
@@ -57,6 +58,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
         row_limit=10,
         optimizer="Lion",
         weight_decay=0.0,
+        use_8bit_adam=False
     ):
         super().__init__(
             dataloader,
@@ -92,16 +94,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
         vae_parameters = set(self.model.vae.parameters())
         t5_parameters = set(self.model.transformer.t5.parameters())
         transformer_parameters = all_parameters - vae_parameters - t5_parameters
-
-        # optimizers
-        if optimizer == "Adam":
-            self.optim = Adam(transformer_parameters, lr=lr, weight_decay=weight_decay)
-        elif optimizer == "AdamW":
-            self.optim = AdamW(transformer_parameters, lr=lr, weight_decay=weight_decay)
-        elif optimizer == "Lion":
-            self.optim = Lion(transformer_parameters, lr=lr, weight_decay=weight_decay)
-        else:
-            print(f"{optimizer} optimizer not supported yet.")
+        self.optim = get_optimizer(use_8bit_adam, optimizer, transformer_parameters, lr, weight_decay)
 
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,
