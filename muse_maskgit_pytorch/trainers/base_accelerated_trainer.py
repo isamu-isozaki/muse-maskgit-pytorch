@@ -17,8 +17,9 @@ from accelerate import Accelerator, DistributedType, DistributedDataParallelKwar
 from ema_pytorch import EMA
 from tqdm import tqdm
 from torch.optim import Adam, AdamW
-from torch_optimizer import Adafactor, AdaBound, AdaMod, AccSGD, AdamP, AggMo, DiffGrad, \
+from torch_optimizer import AdaBound, AdaMod, AccSGD, AdamP, AggMo, DiffGrad, \
      Lamb, NovoGrad, PID, QHAdam, QHM, RAdam, SGDP, SGDW, Shampoo, SWATS, Yogi
+from transformers.optimization import Adafactor
 from lion_pytorch import Lion
 
 import numpy as np
@@ -119,7 +120,7 @@ def get_optimizer(use_8bit_adam, optimizer, parameters, lr, weight_decay):
         if use_8bit_adam:
             print("8bit is not supported by the Lion optimiser, Using standard Lion instead.")
     elif optimizer == "Adafactor":
-        optim = Adafactor(parameters, lr=lr, weight_decay=weight_decay)
+        optim = Adafactor(parameters, lr=lr, weight_decay=weight_decay, relative_step=False)
     elif optimizer == "AccSGD":
         optim = AccSGD(parameters, lr=lr, weight_decay=weight_decay)
     elif optimizer == "AdaBound":
