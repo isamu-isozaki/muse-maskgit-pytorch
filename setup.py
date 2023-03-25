@@ -37,7 +37,8 @@ setup(
         "tqdm",
         "vector-quantize-pytorch>=0.10.14",
         "lion-pytorch",
-        "loguru"
+        "loguru",
+        "torch_optimizer",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",
