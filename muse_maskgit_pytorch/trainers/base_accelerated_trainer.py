@@ -17,6 +17,8 @@ from accelerate import Accelerator, DistributedType, DistributedDataParallelKwar
 from ema_pytorch import EMA
 from tqdm import tqdm
 from torch.optim import Adam, AdamW
+from torch_optimizer import Adafactor, AdaBound, AdaMod, AccSGD, AdamP, AggMo, DiffGrad, \
+     Lamb, NovoGrad, PID, QHAdam, QHM, RAdam, SGDP, SGDW, Shampoo, SWATS, Yogi
 from lion_pytorch import Lion
 
 import numpy as np
@@ -116,6 +118,42 @@ def get_optimizer(use_8bit_adam, optimizer, parameters, lr, weight_decay):
         optim = Lion(parameters, lr=lr, weight_decay=weight_decay)
         if use_8bit_adam:
             print("8bit is not supported by the Lion optimiser, Using standard Lion instead.")
+    elif optimizer == "Adafactor":
+        optim = Adafactor(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AccSGD":
+        optim = AccSGD(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdaBound":
+        optim = AdaBound(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdaMod":
+        optim = AdaMod(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdamP":
+        optim = AdamP(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AggMo":
+        optim = AggMo(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "DiffGrad":
+        optim = DiffGrad(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "Lamb":
+        optim = Lamb(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "NovoGrad":
+        optim = NovoGrad(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "PID":
+        optim = PID(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "QHAdam":
+        optim = QHAdam(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "QHM":
+        optim = QHM(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "RAdam":
+        optim = RAdam(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "SGDP":
+        optim = SGDP(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "SGDW":
+        optim = SGDW(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "Shampoo":
+        optim = Shampoo(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "SWATS":
+        optim = SWATS(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "Yogi":
+        optim = Yogi(parameters, lr=lr, weight_decay=weight_decay)
     else:
         raise NotImplementedError(f"{optimizer} optimizer not supported yet.")
     return optim

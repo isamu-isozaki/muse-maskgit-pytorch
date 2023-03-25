@@ -226,7 +226,8 @@ def parse_args():
         "--optimizer",
         type=str,
         default="Lion",
-        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion']. Default: Lion",
+        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion', 'Adafactor', 'AdaBound', 'AdaMod', 'AccSGD', 'AdamP', 'AggMo', 'DiffGrad', \
+        'Lamb', 'NovoGrad', 'PID', 'QHAdam', 'QHM', 'RAdam', 'SGDP', 'SGDW', 'Shampoo', 'SWATS', 'Yogi']. Default: Lion",
     )
     parser.add_argument(
         "--weight_decay",
