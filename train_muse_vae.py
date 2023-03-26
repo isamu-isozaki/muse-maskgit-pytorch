@@ -22,6 +22,17 @@ import argparse
 def parse_args():
     # Create the parser
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--bilinear",
+        action="store_true",
+        help="Whether to do bilinear upsampling instead of conv transpose.",
+    )
+    parser.add_argument(
+        "--pixel_shuffle",
+        action="store_true",
+        help="whether to do pixel shuffling instead of conv transpose.",
+    )
+    parser.add_argument("--act", type=str, default="leaky_relu", choices=["leaky_relu", "silu"], help="Activation function.")
     parser.add_argument("--layers", type=int, default=4, help="Number of layers used for encoding/decoding.")
     parser.add_argument("--discr_layers", type=int, default=4, help="Number of layers used for the discriminator.")
     parser.add_argument(
@@ -175,6 +186,7 @@ def parse_args():
         help="Save the model every this number of steps.",
     )
     parser.add_argument("--vq_codebook_size", type=int, default=256, help="Image Size.")
+    parser.add_argument("--vq_codebook_dim", type=int, default=512, help="Codebook dimension.")
     parser.add_argument(
         "--image_size",
         type=int,
@@ -259,7 +271,7 @@ def main():
     elif args.dataset_name:
         dataset = load_dataset(args.dataset_name)["train"]
 
-    vae = VQGanVAE(layers=args.layers, discr_layers=args.discr_layers, dim=args.dim, vq_codebook_size=args.vq_codebook_size, enc_dec_class_name=args.enc_dec_class_name,)
+    vae = VQGanVAE(layers=args.layers, discr_layers=args.discr_layers, dim=args.dim, vq_codebook_size=args.vq_codebook_size, vq_codebook_dim=args.vq_codebook_dim, enc_dec_class_name=args.enc_dec_class_name, bilinear=args.bilinear, pixel_shuffle=args.pixel_shuffle)
     if args.taming_model_path:
         print("Loading Taming VQGanVAE")
         vae = VQGanVAETaming(

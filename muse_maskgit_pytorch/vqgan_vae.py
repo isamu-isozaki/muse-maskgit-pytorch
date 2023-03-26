@@ -128,6 +128,13 @@ def gradient_penalty(images, output, weight=10):
 def leaky_relu(p=0.1):
     return nn.LeakyReLU(0.1)
 
+def get_activation(name):
+    if name == "leaky_relu":
+        return leaky_relu
+    elif name == "silu":
+        return nn.SiLU
+    else:
+        raise NotImplementedError(f"Activation {name} is not implemented")
 
 def safe_div(numer, denom, eps=1e-8):
     return numer / denom.clamp(min=eps)
@@ -180,8 +187,10 @@ class LayerNormChan(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, dims, channels=3, groups=16, init_kernel_size=5):
+    def __init__(self, dims, channels=3, groups=16, init_kernel_size=5, act="leaky_relu"):
+        # Todo add one more layer here
         super().__init__()
+        activation = get_activation(act)
         dim_pairs = zip(dims[:-1], dims[1:])
 
         self.layers = MList(
@@ -193,7 +202,7 @@ class Discriminator(nn.Module):
                         init_kernel_size,
                         padding=init_kernel_size // 2,
                     ),
-                    leaky_relu(),
+                    activation(),
                 )
             ]
         )
@@ -203,13 +212,13 @@ class Discriminator(nn.Module):
                 nn.Sequential(
                     nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1),
                     nn.GroupNorm(groups, dim_out),
-                    leaky_relu(),
+                    activation(),
                 )
             )
 
         dim = dims[-1]
         self.to_logits = nn.Sequential(  # return 5 x 5, for PatchGAN-esque training
-            nn.Conv2d(dim, dim, 1), leaky_relu(), nn.Conv2d(dim, 1, 4)
+            nn.Conv2d(dim, dim, 1), activation(), nn.Conv2d(dim, 1, 4)
         )
 
     def forward(self, x):
@@ -233,9 +242,13 @@ class ResnetEncDec(nn.Module):
         num_resnet_blocks=1,
         resnet_groups=16,
         first_conv_kernel_size=5,
+        act="leaky_relu",
+        bilinear=False,
+        pixel_shuffle=False,
         **kwargs
     ):
         super().__init__()
+        activation = get_activation(act)
         assert (
             dim % resnet_groups == 0
         ), f"dimension {dim} must be divisible by {resnet_groups} (groups for the groupnorm)"
@@ -270,21 +283,45 @@ class ResnetEncDec(nn.Module):
         for layer_index, (dim_in, dim_out), layer_num_resnet_blocks in zip(
             range(layers), dim_pairs, num_resnet_blocks
         ):
+            if layer_index == layers-1:
+                encode_conv = nn.Conv2d(dim_in, dim_out, 3, stride=1, padding=1)
+            else:
+                encode_conv = nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1)
             append(
                 self.encoders,
                 nn.Sequential(
-                    nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1), leaky_relu()
+                    encode_conv, 
+                    activation()
                 ),
             )
+            if layer_index == layers-1:
+                decode_layers = [
+                    nn.Conv2d(dim_out, dim_in, 3, 1, 1)
+                ]
+            elif bilinear:
+                decode_layers = [
+                    nn.Upsample(scale_factor=(2, 2), mode="bilinear"),
+                    nn.Conv2d(dim_out, dim_in, 3, 1, 1)
+                ]
+            elif pixel_shuffle:
+                decode_layers = [
+                    nn.PixelShuffle(2),
+                    nn.Conv2d(dim_out//4, dim_in, 3, 1, 1),
+                ]
+            else:
+                decode_layers = [
+                    nn.ConvTranspose2d(dim_out, dim_in, 4, 2, 1)
+                ]
             prepend(
                 self.decoders,
                 nn.Sequential(
-                    nn.ConvTranspose2d(dim_out, dim_in, 4, 2, 1), leaky_relu()
+                    *decode_layers,
+                    activation()
                 ),
             )
 
             for _ in range(layer_num_resnet_blocks):
-                append(self.encoders, ResBlock(dim_out, groups=resnet_groups))
+                append(self.encoders, ResBlock(dim_out, groups=resnet_groups, act=act))
                 prepend(self.decoders, GLUResBlock(dim_out, groups=resnet_groups))
 
         prepend(
@@ -308,11 +345,11 @@ class ResnetEncDec(nn.Module):
     def encode(self, x):
         for enc in self.encoders:
             x = enc(x)
-            print(x.shape)
         return x
 
     def decode(self, x):
         for dec in self.decoders:
+            # print(dec)
             x = dec(x)
         return x
 
@@ -335,8 +372,9 @@ class GLUResBlock(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, chan, groups=16):
+    def __init__(self, chan, groups=16, act="leaky_relu"):
         super().__init__()
+        activation = get_activation(act)
         self.net = nn.Sequential(
             nn.Conv2d(chan, chan, 3, padding=1),
             nn.GroupNorm(groups, chan),
@@ -458,6 +496,9 @@ class VQGanVAE(nn.Module):
         discr_layers=4,
         enc_dec_class_name="ResnetEncDec",
         timm_backend=None,
+        act="leaky_relu",
+        bilinear=False,
+        pixel_shuffle=False,
         **kwargs,
     ):
         super().__init__()
@@ -471,7 +512,8 @@ class VQGanVAE(nn.Module):
         enc_dec_klass = get_enc_dec(enc_dec_class_name)
 
         self.enc_dec = enc_dec_klass(
-            dim=dim, channels=channels, layers=layers, **encdec_kwargs
+            dim=dim, channels=channels, layers=layers, act=act, bilinear=bilinear,
+            pixel_shuffle=pixel_shuffle, **encdec_kwargs
         )
 
         self.vq = VQ(
@@ -510,7 +552,7 @@ class VQGanVAE(nn.Module):
         layer_dims = [dim * mult for mult in layer_mults]
         dims = (dim, *layer_dims)
 
-        self.discr = Discriminator(dims=dims, channels=channels)
+        self.discr = Discriminator(dims=dims, channels=channels, act=act)
 
         self.discr_loss = hinge_discr_loss if use_hinge_loss else bce_discr_loss
         self.gen_loss = hinge_gen_loss if use_hinge_loss else bce_gen_loss
@@ -569,7 +611,7 @@ class VQGanVAE(nn.Module):
         return self.vq.codebook
 
     def encode(self, fmap):
-        fmap = self.enc_dec.encode(fmap)
+        fmap = self.enc_dec.encode(fmap+0.5)
         fmap, indices, commit_loss = self.vq(fmap)
         return fmap, indices, commit_loss
 
@@ -580,7 +622,7 @@ class VQGanVAE(nn.Module):
         return self.decode(fmap)
 
     def decode(self, fmap):
-        return self.enc_dec.decode(fmap)
+        return self.enc_dec.decode(fmap)-0.5
 
     def forward(
         self,
