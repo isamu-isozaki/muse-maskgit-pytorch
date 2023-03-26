@@ -294,12 +294,12 @@ class ResnetEncDec(nn.Module):
             if bilinear:
                 decode_layers = [
                     nn.Upsample(scale_factor=(2, 2), mode="bilinear"),
-                    nn.Conv2d(dim_out, dim_in, 3, 1, 1)
+                    nn.Conv2d(dim_out, dim_in, 5, 1, 2)
                 ]
             elif pixel_shuffle:
                 decode_layers = [
                     nn.PixelShuffle(2),
-                    nn.Conv2d(dim_out//4, dim_in, 3, 1, 1),
+                    nn.Conv2d(dim_out//4, dim_in, 5, 1, 2),
                 ]
             else:
                 decode_layers = [
