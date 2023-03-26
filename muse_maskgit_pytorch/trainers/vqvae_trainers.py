@@ -103,7 +103,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # optimizers
         self.optim = get_optimizer(use_8bit_adam, optimizer, vae_parameters, lr, weight_decay)
-
+        self.discr_optim = get_optimizer(use_8bit_adam, optimizer, discr_parameters, lr, weight_decay)
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,
             optimizer=self.optim,
