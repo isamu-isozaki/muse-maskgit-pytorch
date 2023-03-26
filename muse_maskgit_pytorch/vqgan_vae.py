@@ -283,22 +283,15 @@ class ResnetEncDec(nn.Module):
         for layer_index, (dim_in, dim_out), layer_num_resnet_blocks in zip(
             range(layers), dim_pairs, num_resnet_blocks
         ):
-            if layer_index == layers-1:
-                encode_conv = nn.Conv2d(dim_in, dim_out, 3, stride=1, padding=1)
-            else:
-                encode_conv = nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1)
+            encode_conv = nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1)
             append(
                 self.encoders,
                 nn.Sequential(
-                    encode_conv, 
+                    encode_conv,
                     activation()
                 ),
             )
-            if layer_index == layers-1:
-                decode_layers = [
-                    nn.Conv2d(dim_out, dim_in, 3, 1, 1)
-                ]
-            elif bilinear:
+            if bilinear:
                 decode_layers = [
                     nn.Upsample(scale_factor=(2, 2), mode="bilinear"),
                     nn.Conv2d(dim_out, dim_in, 3, 1, 1)

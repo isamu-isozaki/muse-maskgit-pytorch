@@ -26,6 +26,11 @@ def parse_args():
     # Create the parser
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Whether to stream dataset.",
+    )
+    parser.add_argument(
         "--bilinear",
         action="store_true",
         help="Whether to do bilinear upsampling instead of conv transpose.",
@@ -286,7 +291,7 @@ def main():
             save_path=args.dataset_save_path,
         )
     elif args.dataset_name:
-        dataset = load_dataset(args.dataset_name)["train"]
+        dataset = load_dataset(args.dataset_name, streaming=args.stream)["train"]
 
     vae = VQGanVAE(layers=args.layers, discr_layers=args.discr_layers, dim=args.dim, vq_codebook_size=args.vq_codebook_size, vq_codebook_dim=args.vq_codebook_dim, enc_dec_class_name=args.enc_dec_class_name, bilinear=args.bilinear, pixel_shuffle=args.pixel_shuffle)
     if args.taming_model_path:
