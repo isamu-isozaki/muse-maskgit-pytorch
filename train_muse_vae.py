@@ -246,12 +246,6 @@ def parse_args():
         help="path to your trained VQGAN config. This should be a .yaml file. (only valid when taming option is enabled)",
     )
     parser.add_argument(
-        "--optimizer",
-        type=str,
-        default="Lion",
-        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion']. Default: Lion",
-    )
-    parser.add_argument(
         "--weight_decay",
         type=float,
         default=0.0,
