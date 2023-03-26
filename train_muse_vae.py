@@ -279,6 +279,8 @@ def main():
         )
     elif args.dataset_name:
         dataset = load_dataset(args.dataset_name, streaming=args.stream)["train"]
+        if args.stream:
+            dataset = dataset.with_format("torch")
 
     vae = VQGanVAE(layers=args.layers, discr_layers=args.discr_layers, dim=args.dim, vq_codebook_size=args.vq_codebook_size, vq_codebook_dim=args.vq_codebook_dim, enc_dec_class_name=args.enc_dec_class_name, bilinear=args.bilinear, pixel_shuffle=args.pixel_shuffle)
     if args.taming_model_path:
