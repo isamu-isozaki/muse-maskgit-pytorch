@@ -167,7 +167,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
             self.lr_scheduler.step()
             self.optim.step()
             self.optim.zero_grad()
-        if self.accelerator.sync_gradients:
+        if self.accelerator.sync_gradients and self.is_main():
             self.steps += 1
             if self.use_ema:
                 ema_model.update()

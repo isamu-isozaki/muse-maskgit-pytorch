@@ -280,7 +280,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # sample results every so often
 
-        if (steps % self.save_results_every) == 0:
+        if (steps % self.save_results_every) == 0 and self.is_main():
             vaes_to_evaluate = ((self.model, str(steps)),)
 
             if self.use_ema:
@@ -293,7 +293,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # save model every so often
         self.accelerator.wait_for_everyone()
-        if self.is_main and (steps % self.save_model_every) == 0:
+        if (steps % self.save_model_every) == 0 and self.is_main():
             state_dict = self.accelerator.unwrap_model(self.model).state_dict()
             file_name = (
                 f"vae.{steps}.pt" if not self.only_save_last_checkpoint else "vae.pt"
