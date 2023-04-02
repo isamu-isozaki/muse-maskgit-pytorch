@@ -426,7 +426,7 @@ class TimmFeatureEncDec(ResnetEncDec):
         backbone="convnext_base",
         requires_grad=False,
         enc_layers=["stem", "stages", "norm_pre"],
-        input_shapes=[1, 3, 256, 256],
+        input_shape=[1, 3, 256, 256],
         layers=4,
         num_timm_resnet_blocks=0,
         resnet_groups=16,
@@ -450,11 +450,11 @@ class TimmFeatureEncDec(ResnetEncDec):
         self._features = {layer: torch.empty(0) for layer in self.enc_layers}
         self.requires_grad = requires_grad
         self.timm_model.requires_grad = requires_grad
-        encoded_features = self.get_encoded_features(input_shape=input_shapes)
+        encoded_features = self.get_encoded_features(input_shape=input_shape)
         conv_encoders = []
         for encoded_feature in encoded_features:
             encoded_shape = encoded_feature.shape
-            size_reduction = int(math.log(input_shapes[-1] // encoded_shape[-1], 2))
+            size_reduction = int(math.log(input_shape[-1] // encoded_shape[-1], 2))
             assert (
                 size_reduction <= layers
             ), "You can't have layers smaller than the latent space. Consider increasing the layers parameter"
@@ -613,6 +613,7 @@ class VQGanVAE(nn.Module):
         timm_offset=0,
         num_resnet_blocks=1,
         num_timm_resnet_blocks=0,
+        image_size=256,
         **kwargs,
     ):
         super().__init__()
@@ -641,6 +642,7 @@ class VQGanVAE(nn.Module):
             timm_offset=timm_offset,
             num_resnet_blocks=num_resnet_blocks,
             num_timm_resnet_blocks=num_timm_resnet_blocks,
+            input_shape=[1, 3, image_size, image_size],
             **encdec_kwargs,
         )
 

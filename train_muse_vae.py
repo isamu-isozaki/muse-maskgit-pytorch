@@ -377,6 +377,7 @@ def main():
         timm_offset=args.timm_offset,
         num_resnet_blocks=args.num_resnet_blocks,
         num_timm_resnet_blocks=args.num_timm_resnet_blocks,
+        image_size=args.image_size
     )
     if args.taming_model_path:
         print("Loading Taming VQGanVAE")
