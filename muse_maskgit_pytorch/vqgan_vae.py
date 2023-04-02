@@ -171,7 +171,7 @@ def grad_layer_wrt_loss(loss, layer):
     )[0].detach()
 
 
-def _map_layer_to_idx(backbone, layers, offset=0) -> list[int]:
+def _map_layer_to_idx(backbone, layers, offset=0):
     """Maps set of layer names to indices of model.
 
     Returns:
