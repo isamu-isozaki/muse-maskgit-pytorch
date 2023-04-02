@@ -405,6 +405,7 @@ class ResBlock(nn.Module):
     def __init__(self, chan, groups=16, act="leaky_relu"):
         super().__init__()
         activation = get_activation(act)
+        self.chan = chan
         self.net = nn.Sequential(
             nn.Conv2d(chan, chan, 3, padding=1),
             nn.GroupNorm(groups, chan),
@@ -463,12 +464,13 @@ class TimmFeatureEncDec(ResnetEncDec):
             feature_dim = encoded_shape[1]
             next_dim = 2 ** (size_reduction - 1) * self.dim
             feature_encoder.append(nn.Conv2d(feature_dim, next_dim, 3, 1, 1))
-            feature_dim = next_dim
-            next_dim = next_dim * 2
+
             for _ in range(num_timm_resnet_blocks):
                 feature_encoder.append(
                     ResBlock(next_dim, groups=resnet_groups, act=act)
                 )
+            feature_dim = next_dim
+            next_dim = next_dim * 2
             for _ in range(layers - size_reduction):
                 feature_encoder.append(nn.Conv2d(feature_dim, next_dim, 3, 1, 1))
                 feature_encoder.append(nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2)))
