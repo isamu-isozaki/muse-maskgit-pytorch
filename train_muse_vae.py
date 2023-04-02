@@ -26,6 +26,18 @@ def parse_args():
     # Create the parser
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--num_timm_resnet_blocks",
+        type=int,
+        default=0,
+        help="Number of resnet blocks for timm features in encoder"
+    )
+    parser.add_argument(
+        "--num_resnet_blocks",
+        type=int,
+        default=1,
+        help="Number of resnet blocks in encoder/decoder"
+    )
+    parser.add_argument(
         "--timm_offset",
         type=int,
         default=0,
@@ -362,7 +374,9 @@ def main():
         timm_disc_layers=args.timm_disc_layers.split("|"),
         timm_disc_path=args.timm_disc_path,
         timm_discr_offset=args.timm_discr_offset,
-        timm_offset=args.timm_offset
+        timm_offset=args.timm_offset,
+        num_resnet_blocks=args.num_resnet_blocks,
+        num_timm_resnet_blocks=args.num_timm_resnet_blocks,
     )
     if args.taming_model_path:
         print("Loading Taming VQGanVAE")

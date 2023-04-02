@@ -611,6 +611,8 @@ class VQGanVAE(nn.Module):
         timm_disc_path=None,
         timm_discr_offset=0,
         timm_offset=0,
+        num_resnet_blocks=1,
+        num_timm_resnet_blocks=0,
         **kwargs,
     ):
         super().__init__()
@@ -637,6 +639,8 @@ class VQGanVAE(nn.Module):
             backend=timm_backend,
             enc_layers=enc_layers,
             timm_offset=timm_offset,
+            num_resnet_blocks=num_resnet_blocks,
+            num_timm_resnet_blocks=num_timm_resnet_blocks,
             **encdec_kwargs,
         )
 
