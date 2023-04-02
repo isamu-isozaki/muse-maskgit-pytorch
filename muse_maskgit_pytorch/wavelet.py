@@ -7,6 +7,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+
 def get_filter_bank(wavelet, dtype=torch.float32):
     """Get the filter bank for a given pywavelets wavelet name. See
     https://wavelets.pybytes.com for a list of available wavelets.
@@ -21,6 +22,8 @@ def get_filter_bank(wavelet, dtype=torch.float32):
     if wavelet.startswith("bior") and torch.all(filt[:, 0] == 0):
         filt = filt[:, 1:]
     return filt
+
+
 def make_2d_kernel(lo, hi):
     """Make a 2D convolution kernel from 1D lowpass and highpass filters."""
     lo = torch.flip(lo)
@@ -31,6 +34,8 @@ def make_2d_kernel(lo, hi):
     hh = torch.outer(hi, hi)
     kernel = torch.stack([ll, lh, hl, hh])[:, None]
     return kernel
+
+
 def make_kernels(filter, channels):
     """Precompute the convolution kernels for the DWT and IDWT for a given number of
     channels.
@@ -53,6 +58,8 @@ def make_kernels(filter, channels):
     kernel_rec[index_i * channels + index_j, index_j] = k_rec[index_i, 0]
     kernel_rec = torch.swapaxes(kernel_rec, 0, 1)
     return kernel_dec, kernel_rec
+
+
 class WaveletEncode2d(nn.Module):
     def __init__(self, channels, wavelet, levels):
         super().__init__()
@@ -70,7 +77,9 @@ class WaveletEncode2d(nn.Module):
             pad = self.kernel.shape[-1] // 2
             low = F.pad(low, (pad, pad), "reflect")
             low = F.conv1d(low, self.kernel, stride=2)
-            rest = rearrange(rest, "n(hi)(wx)(cd)->nhw(cixd)", i=2, x=2, d=self.channels)
+            rest = rearrange(
+                rest, "n(hi)(wx)(cd)->nhw(cixd)", i=2, x=2, d=self.channels
+            )
             x = torch.cat([low, rest], dim=-1)
         return x
 
@@ -102,7 +111,11 @@ class WaveletDecode2d(nn.Module):
                 low, self.kernel, stride=2, padding=self.kernel.shape[-1] // 2
             )
             crop = (low.shape[1] - shape_orig[1] * 2) // 2
-            low = low[:, crop : low.shape[1] - crop - 1, crop : low.shape[2] - crop - 1, :]
-            rest = rearrange(rest, "nhw(cixd)->n(hi)(wx)(cd)", i=2, x=2, d=self.channels)
+            low = low[
+                :, crop : low.shape[1] - crop - 1, crop : low.shape[2] - crop - 1, :
+            ]
+            rest = rearrange(
+                rest, "nhw(cixd)->n(hi)(wx)(cd)", i=2, x=2, d=self.channels
+            )
             x = torch.cat([low, rest], dim=-1)
         return x

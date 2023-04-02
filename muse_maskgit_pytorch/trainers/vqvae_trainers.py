@@ -74,7 +74,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         only_save_last_checkpoint=False,
         optimizer="Adam",
         weight_decay=0.0,
-        use_8bit_adam=False
+        use_8bit_adam=False,
     ):
         super().__init__(
             dataloader,
@@ -102,8 +102,12 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         vae_parameters = all_parameters - discr_parameters
 
         # optimizers
-        self.optim = get_optimizer(use_8bit_adam, optimizer, vae_parameters, lr, weight_decay)
-        self.discr_optim = get_optimizer(use_8bit_adam, optimizer, discr_parameters, lr, weight_decay)
+        self.optim = get_optimizer(
+            use_8bit_adam, optimizer, vae_parameters, lr, weight_decay
+        )
+        self.discr_optim = get_optimizer(
+            use_8bit_adam, optimizer, discr_parameters, lr, weight_decay
+        )
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,
             optimizer=self.optim,

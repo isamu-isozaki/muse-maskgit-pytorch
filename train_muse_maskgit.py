@@ -398,7 +398,7 @@ def main():
         only_save_last_checkpoint=args.only_save_last_checkpoint,
         optimizer=args.optimizer,
         weight_decay=args.weight_decay,
-        use_8bit_adam=args.use_8bit_adam
+        use_8bit_adam=args.use_8bit_adam,
     )
 
     trainer.train()

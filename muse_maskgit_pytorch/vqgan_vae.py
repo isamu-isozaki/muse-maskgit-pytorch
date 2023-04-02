@@ -20,6 +20,7 @@ import timm
 from diffusers.models.vae import Encoder, Decoder
 import warnings
 from muse_maskgit_pytorch.wavelet import WaveletEncode2d, WaveletDecode2d
+
 # constants
 
 MList = nn.ModuleList
@@ -49,18 +50,18 @@ def eval_decorator(fn):
     return inner
 
 
-def remove_vgg(fn):
+def remove_timm_discriminator(fn):
     @wraps(fn)
     def inner(self, *args, **kwargs):
-        has_vgg = hasattr(self, "_vgg")
-        if has_vgg:
-            vgg = self._vgg
-            delattr(self, "_vgg")
+        has_timm_discriminator = hasattr(self, "_timm_discriminator")
+        if has_timm_discriminator:
+            timm_discriminator = self._timm_discriminator
+            delattr(self, "_timm_discriminator")
 
         out = fn(self, *args, **kwargs)
 
-        if has_vgg:
-            self._vgg = vgg
+        if has_timm_discriminator:
+            self._timm_discriminator = timm_discriminator
 
         return out
 
@@ -128,6 +129,7 @@ def gradient_penalty(images, output, weight=10):
 def leaky_relu(p=0.1):
     return nn.LeakyReLU(0.1)
 
+
 def get_activation(name):
     if name == "leaky_relu":
         return leaky_relu
@@ -135,6 +137,7 @@ def get_activation(name):
         return nn.SiLU
     else:
         raise NotImplementedError(f"Activation {name} is not implemented")
+
 
 def safe_div(numer, denom, eps=1e-8):
     return numer / denom.clamp(min=eps)
@@ -168,6 +171,29 @@ def grad_layer_wrt_loss(loss, layer):
     )[0].detach()
 
 
+def _map_layer_to_idx(backbone, layers, offset=0) -> list[int]:
+    """Maps set of layer names to indices of model.
+
+    Returns:
+        Feature map extracted from the CNN
+    """
+    idx = []
+    features = timm.create_model(
+        backbone,
+        pretrained=False,
+        features_only=False,
+        exportable=True,
+    )
+    for i in layers:
+        try:
+            idx.append(list(dict(features.named_children()).keys()).index(i)-offset)
+        except ValueError:
+            raise ValueError(
+                f"Layer {i} not found in model {backbone}. Select layer from {list(dict(features.named_children()).keys())}. The network architecture is {features}"
+            )
+    return idx
+
+
 # vqgan vae
 
 
@@ -187,7 +213,15 @@ class LayerNormChan(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, dims, channels=3, groups=16, init_kernel_size=5, act="leaky_relu"):
+    def __init__(
+        self,
+        dims,
+        channels=3,
+        groups=16,
+        init_kernel_size=5,
+        kernel_size=3,
+        act="leaky_relu",
+    ):
         # Todo add one more layer here
         super().__init__()
         activation = get_activation(act)
@@ -210,7 +244,14 @@ class Discriminator(nn.Module):
         for dim_in, dim_out in dim_pairs:
             self.layers.append(
                 nn.Sequential(
-                    nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1),
+                    nn.Conv2d(
+                        dim_in,
+                        dim_out,
+                        kernel_size=kernel_size,
+                        stride=1,
+                        padding=kernel_size // 2,
+                    ),
+                    nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2)),
                     nn.GroupNorm(groups, dim_out),
                     activation(),
                 )
@@ -245,14 +286,14 @@ class ResnetEncDec(nn.Module):
         act="leaky_relu",
         bilinear=False,
         pixel_shuffle=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         activation = get_activation(act)
         assert (
             dim % resnet_groups == 0
         ), f"dimension {dim} must be divisible by {resnet_groups} (groups for the groupnorm)"
-
+        self.dim = dim
         self.layers = layers
 
         self.encoders = MList([])
@@ -283,33 +324,30 @@ class ResnetEncDec(nn.Module):
         for layer_index, (dim_in, dim_out), layer_num_resnet_blocks in zip(
             range(layers), dim_pairs, num_resnet_blocks
         ):
-            encode_conv = nn.Conv2d(dim_in, dim_out, 4, stride=2, padding=1)
+            encode_conv = nn.Conv2d(dim_in, dim_out, 3, stride=1, padding=1)
             append(
                 self.encoders,
                 nn.Sequential(
                     encode_conv,
-                    activation()
+                    nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2)),
                 ),
             )
             if bilinear:
                 decode_layers = [
                     nn.Upsample(scale_factor=(2, 2), mode="bilinear"),
-                    nn.Conv2d(dim_out, dim_in, 5, 1, 2)
+                    nn.Conv2d(dim_out, dim_in, 3, 1, 1),
                 ]
             elif pixel_shuffle:
                 decode_layers = [
                     nn.PixelShuffle(2),
-                    nn.Conv2d(dim_out//4, dim_in, 5, 1, 2),
+                    nn.Conv2d(dim_out // 4, dim_in, 3, 1, 1),
                 ]
             else:
-                decode_layers = [
-                    nn.ConvTranspose2d(dim_out, dim_in, 4, 2, 1)
-                ]
+                decode_layers = [nn.ConvTranspose2d(dim_out, dim_in, 4, 2, 1)]
             prepend(
                 self.decoders,
                 nn.Sequential(
                     *decode_layers,
-                    activation()
                 ),
             )
 
@@ -342,7 +380,6 @@ class ResnetEncDec(nn.Module):
 
     def decode(self, x):
         for dec in self.decoders:
-            # print(dec)
             x = dec(x)
         return x
 
@@ -371,10 +408,10 @@ class ResBlock(nn.Module):
         self.net = nn.Sequential(
             nn.Conv2d(chan, chan, 3, padding=1),
             nn.GroupNorm(groups, chan),
-            leaky_relu(),
+            activation(),
             nn.Conv2d(chan, chan, 3, padding=1),
             nn.GroupNorm(groups, chan),
-            leaky_relu(),
+            activation(),
             nn.Conv2d(chan, chan, 1),
         )
 
@@ -383,21 +420,94 @@ class ResBlock(nn.Module):
 
 
 class TimmFeatureEncDec(ResnetEncDec):
-    def __init__(self, *args, backbone="convnext_large", timm_grad=False, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        *args,
+        backbone="convnext_base",
+        requires_grad=False,
+        enc_layers=["stem", "stages", "norm_pre"],
+        input_shapes=[1, 3, 256, 256],
+        layers=4,
+        num_timm_resnet_blocks=0,
+        resnet_groups=16,
+        act="leaky_relu",
+        timm_offset=0,
+        **kwargs,
+    ):
+        super().__init__(
+            *args, layers=layers, resnet_groups=resnet_groups, act=act, **kwargs
+        )
+        self.enc_layers = enc_layers
+        self.idx = _map_layer_to_idx(backbone, enc_layers, timm_offset)
         self.timm_model = timm.create_model(
             backbone,
             pretrained=True,
             features_only=True,
             exportable=True,
+            out_indices=self.idx,
         )
-        self.timm_model.requires_grad = timm_grad
+        self.out_dims = self.timm_model.feature_info.channels()
+        self._features = {layer: torch.empty(0) for layer in self.enc_layers}
+        self.requires_grad = requires_grad
+        self.timm_model.requires_grad = requires_grad
+        encoded_features = self.get_encoded_features(input_shape=input_shapes)
+        conv_encoders = []
+        for encoded_feature in encoded_features:
+            encoded_shape = encoded_feature.shape
+            size_reduction = int(math.log(input_shapes[-1] // encoded_shape[-1], 2))
+            assert (
+                size_reduction <= layers
+            ), "You can't have layers smaller than the latent space. Consider increasing the layers parameter"
+            feature_encoder = []
+
+            feature_dim = encoded_shape[1]
+            next_dim = 2 ** (size_reduction - 1) * self.dim
+            feature_encoder.append(nn.Conv2d(feature_dim, next_dim, 3, 1, 1))
+            feature_dim = next_dim
+            next_dim = next_dim * 2
+            for _ in range(num_timm_resnet_blocks):
+                feature_encoder.append(
+                    ResBlock(next_dim, groups=resnet_groups, act=act)
+                )
+            for _ in range(layers - size_reduction):
+                feature_encoder.append(nn.Conv2d(feature_dim, next_dim, 3, 1, 1))
+                feature_encoder.append(nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2)))
+                for _ in range(num_timm_resnet_blocks):
+                    feature_encoder.append(
+                        ResBlock(next_dim, groups=resnet_groups, act=act)
+                    )
+                feature_dim = next_dim
+                next_dim = next_dim * 2
+            conv_encoders.append(nn.Sequential(*feature_encoder))
+        self.conv_encoders = nn.ModuleList(conv_encoders)
+
+    def get_encoded_features(self, input_shape):
+        x = torch.zeros(input_shape)
+        features = self.timm_model(x)
+        return features
+
+    def get_image_encoder_features(self, input_shape):
+        x = torch.zeros(input_shape)
+        encoded_shapes = []
+        for enc in self.encoders:
+            x = enc(x)
+            encoded_shapes.append(x.shape)
+        return encoded_shapes
 
     def encode(self, x):
-        features = self.timm_model.forward_features(x)
+        image = x
         for enc in self.encoders:
-            x = enc(features)
-        return x
+            image = enc(image)
+        features = self.timm_model(x)
+        encoded_features = []
+        for i, feature in enumerate(features):
+            encoded_features.append(self.conv_encoders[i](feature))
+        num_features = len(encoded_features)
+        output = image
+        for encoded_feature in encoded_features:
+            output += encoded_feature
+        output /= num_features
+        return output
 
     def decode(self, x):
         for dec in self.decoders:
@@ -406,19 +516,24 @@ class TimmFeatureEncDec(ResnetEncDec):
 
 
 class HuggingfaceEncDec(nn.Module):
-    def __init__(self, *args, in_channels: int = 3,
-            out_channels: int = 3,
-            down_block_types: Tuple[str] = ("DownEncoderBlock2D",),
-            up_block_types: Tuple[str] = ("UpDecoderBlock2D",),
-            block_out_channels: Tuple[int] = (64,),
-            layers_per_block: int = 1,
-            act_fn: str = "silu",
-            latent_channels: int = 3,
-            sample_size: int = 32,
-            num_vq_embeddings: int = 256,
-            norm_num_groups: int = 32,
-            vq_embed_dim: Optional[int] = None,
-            scaling_factor: float = 0.18215, **kwargs):
+    def __init__(
+        self,
+        *args,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        down_block_types: Tuple[str] = ("DownEncoderBlock2D",),
+        up_block_types: Tuple[str] = ("UpDecoderBlock2D",),
+        block_out_channels: Tuple[int] = (64,),
+        layers_per_block: int = 1,
+        act_fn: str = "silu",
+        latent_channels: int = 3,
+        sample_size: int = 32,
+        num_vq_embeddings: int = 256,
+        norm_num_groups: int = 32,
+        vq_embed_dim: Optional[int] = None,
+        scaling_factor: float = 0.18215,
+        **kwargs,
+    ):
         super().__init__()
         self.encoder = Encoder(
             in_channels=in_channels,
@@ -454,9 +569,6 @@ class HuggingfaceEncDec(nn.Module):
         dec = self.decoder(quant)
         return dec
 
-class VITEncDec:
-    def __init__(self, *args, **kwargs):
-        None
 
 # main vqgan-vae classes
 def get_enc_dec(enc_dec_class_name):
@@ -469,6 +581,8 @@ def get_enc_dec(enc_dec_class_name):
     else:
         raise NotImplementedError("Encoder not implemented")
     return func
+
+
 class VQGanVAE(nn.Module):
     def __init__(
         self,
@@ -478,23 +592,32 @@ class VQGanVAE(nn.Module):
         layers=4,
         l2_recon_loss=False,
         use_hinge_loss=True,
-        vgg=None,
         vq_codebook_dim=256,
         vq_codebook_size=512,
         vq_decay=0.8,
         vq_commitment_weight=1.0,
         vq_kmeans_init=True,
         vq_use_cosine_sim=True,
-        use_vgg_and_gan=True,
+        use_timm_and_gan=True,
         discr_layers=4,
         enc_dec_class_name="ResnetEncDec",
-        timm_backend=None,
         act="leaky_relu",
         bilinear=False,
         pixel_shuffle=False,
+        timm_backend="convnext_base",
+        enc_layers=["stem", "stages", "norm_pre"],
+        timm_discriminator_backend="resnet18",
+        timm_disc_layers=["layer1", "layer2"],
+        timm_disc_path=None,
+        timm_discr_offset=0,
+        timm_offset=0,
         **kwargs,
     ):
         super().__init__()
+        self.timm_discr_offset = timm_discr_offset
+        self.timm_discriminator_backend = timm_discriminator_backend
+        self.timm_disc_layers = timm_disc_layers
+        self.timm_disc_path = timm_disc_path
         vq_kwargs, kwargs = groupby_prefix_and_trim("vq_", kwargs)
         encdec_kwargs, kwargs = groupby_prefix_and_trim("encdec_", kwargs)
 
@@ -505,8 +628,16 @@ class VQGanVAE(nn.Module):
         enc_dec_klass = get_enc_dec(enc_dec_class_name)
 
         self.enc_dec = enc_dec_klass(
-            dim=dim, channels=channels, layers=layers, act=act, bilinear=bilinear,
-            pixel_shuffle=pixel_shuffle, **encdec_kwargs
+            dim=dim,
+            channels=channels,
+            layers=layers,
+            act=act,
+            bilinear=bilinear,
+            pixel_shuffle=pixel_shuffle,
+            backend=timm_backend,
+            enc_layers=enc_layers,
+            timm_offset=timm_offset,
+            **encdec_kwargs,
         )
 
         self.vq = VQ(
@@ -527,17 +658,11 @@ class VQGanVAE(nn.Module):
 
         # turn off GAN and perceptual loss if grayscale
 
-        self._vgg = None
         self.discr = None
-        self.use_vgg_and_gan = use_vgg_and_gan
+        self.use_timm_and_gan = use_timm_and_gan
 
-        if not use_vgg_and_gan:
+        if not use_timm_and_gan:
             return
-
-        # preceptual loss
-
-        if exists(vgg):
-            self._vgg = vgg
 
         # gan related losses
 
@@ -555,14 +680,25 @@ class VQGanVAE(nn.Module):
         return next(self.parameters()).device
 
     @property
-    def vgg(self):
-        if exists(self._vgg):
-            return self._vgg
+    def timm_discriminator(self):
+        if hasattr(self, "_timm_discriminator"):
+            return self._timm_discriminator
+        idx = _map_layer_to_idx(self.timm_discriminator_backend, self.timm_disc_layers, self.timm_discr_offset)
 
-        vgg = torchvision.models.vgg16(pretrained=True)
-        vgg.classifier = nn.Sequential(*vgg.classifier[:-2])
-        self._vgg = vgg.to(self.device)
-        return self._vgg
+        timm_discriminator = timm.create_model(
+            self.timm_discriminator_backend,
+            pretrained=not self.timm_disc_path,
+            features_only=True,
+            exportable=True,
+            out_indices=idx,
+        )
+        if self.timm_disc_path:
+            pretrained_model = torch.load(self.timm_disc_path)
+            timm_discriminator.load_state_dict(pretrained_model.state_dict())
+        self._timm_discriminator = timm_discriminator.to(self.device)
+        timm_discriminator.requires_grad = False
+        timm_discriminator.eval()
+        return self._timm_discriminator
 
     @property
     def encoded_dim(self):
@@ -575,18 +711,18 @@ class VQGanVAE(nn.Module):
         device = next(self.parameters()).device
         vae_copy = copy.deepcopy(self.cpu())
 
-        if vae_copy.use_vgg_and_gan:
+        if vae_copy.use_timm_and_gan:
             del vae_copy.discr
-            del vae_copy._vgg
+            del vae_copy._timm_discriminator
 
         vae_copy.eval()
         return vae_copy.to(device)
 
-    @remove_vgg
+    @remove_timm_discriminator
     def state_dict(self, *args, **kwargs):
         return super().state_dict(*args, **kwargs)
 
-    @remove_vgg
+    @remove_timm_discriminator
     def load_state_dict(self, *args, **kwargs):
         return super().load_state_dict(*args, **kwargs)
 
@@ -604,7 +740,7 @@ class VQGanVAE(nn.Module):
         return self.vq.codebook
 
     def encode(self, fmap):
-        fmap = self.enc_dec.encode(fmap+0.5)
+        fmap = self.enc_dec.encode(fmap + 0.5)
         fmap, indices, commit_loss = self.vq(fmap)
         return fmap, indices, commit_loss
 
@@ -615,7 +751,7 @@ class VQGanVAE(nn.Module):
         return self.decode(fmap)
 
     def decode(self, fmap):
-        return self.enc_dec.decode(fmap)-0.5
+        return self.enc_dec.decode(fmap) - 0.5
 
     def forward(
         self,
@@ -674,7 +810,7 @@ class VQGanVAE(nn.Module):
 
         # early return if training on grayscale
 
-        if not self.use_vgg_and_gan:
+        if not self.use_timm_and_gan:
             if return_recons:
                 return recon_loss, fmap
 
@@ -682,19 +818,30 @@ class VQGanVAE(nn.Module):
 
         # perceptual loss
 
-        img_vgg_input = img
-        fmap_vgg_input = fmap
+        img_timm_discriminator_input = img
+        fmap_timm_discriminator_input = fmap
 
         if img.shape[1] == 1:
-            # handle grayscale for vgg
-            img_vgg_input, fmap_vgg_input = map(
+            # handle grayscale for timm_discriminator
+            img_timm_discriminator_input, fmap_timm_discriminator_input = map(
                 lambda t: repeat(t, "b 1 ... -> b c ...", c=3),
-                (img_vgg_input, fmap_vgg_input),
+                (img_timm_discriminator_input, fmap_timm_discriminator_input),
             )
 
-        img_vgg_feats = self.vgg(img_vgg_input)
-        recon_vgg_feats = self.vgg(fmap_vgg_input)
-        perceptual_loss = F.mse_loss(img_vgg_feats, recon_vgg_feats)
+        img_timm_discriminator_feats = self.timm_discriminator(
+            img_timm_discriminator_input
+        )
+        recon_timm_discriminator_feats = self.timm_discriminator(
+            fmap_timm_discriminator_input
+        )
+        perceptual_loss = F.mse_loss(
+            img_timm_discriminator_feats[0], recon_timm_discriminator_feats[0]
+        )
+        for i in range(1, len(img_timm_discriminator_feats)):
+            perceptual_loss += F.mse_loss(
+                img_timm_discriminator_feats[i], recon_timm_discriminator_feats[i]
+            )
+        perceptual_loss /= len(img_timm_discriminator_feats)
 
         # generator loss
 
@@ -716,7 +863,7 @@ class VQGanVAE(nn.Module):
 
         # combine losses
         # recon loss is reconstruction loss mse
-        # perceptual loss is loss in vgg features mse
+        # perceptual loss is loss in timm_discriminator features mse
         # commit loss is loss in quanitizing in vq mse
         # gan loss is
         loss = recon_loss + perceptual_loss + commit_loss + adaptive_weight * gen_loss

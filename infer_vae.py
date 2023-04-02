@@ -213,7 +213,7 @@ def main():
 
     os.makedirs(f"{args.results_dir}/outputs", exist_ok=True)
 
-    save_image(dataset[image_id]+0.5, f"{args.results_dir}/outputs/input.png")
+    save_image(dataset[image_id] + 0.5, f"{args.results_dir}/outputs/input.png")
 
     _, ids, _ = vae.encode(dataset[image_id][None].to(accelerator.device))
     recon = vae.decode_from_ids(ids)
