@@ -255,8 +255,8 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 img = next(self.dl_iter)
                 img = img.to(device)
 
-                with torch.cuda.amp.autocast():
-                    loss = self.model(img, return_discr_loss=True)
+                #with torch.cuda.amp.autocast():
+                loss = self.model(img, return_discr_loss=True)
 
                 self.accelerator.backward(loss / self.gradient_accumulation_steps)
 
