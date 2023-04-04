@@ -98,13 +98,18 @@ def split_dataset(dataset, valid_frac, accelerator, seed=42):
 
 # main trainer class
 
+
 def get_optimizer(use_8bit_adam, optimizer, parameters, lr, weight_decay):
     if use_8bit_adam:
         try:
             import bitsandbytes as bnb
-        except ImportError:  # bitsandbytes raises a broad exception for cuda setup errors
-            raise ImportError("Please install bitsandbytes to use 8-bit optimizers. You can do so by running `pip install "
-                        "bitsandbytes` | Defaulting to non 8-bit equivalent...")
+        except (
+            ImportError
+        ):  # bitsandbytes raises a broad exception for cuda setup errors
+            raise ImportError(
+                "Please install bitsandbytes to use 8-bit optimizers. You can do so by running `pip install "
+                "bitsandbytes` | Defaulting to non 8-bit equivalent..."
+            )
     # optimizers
     if optimizer == "Adam":
         if use_8bit_adam:
@@ -120,10 +125,14 @@ def get_optimizer(use_8bit_adam, optimizer, parameters, lr, weight_decay):
     elif optimizer == "Lion":
         optim = Lion(parameters, lr=lr, weight_decay=weight_decay)
         if use_8bit_adam:
-            print("8bit is not supported by the Lion optimiser, Using standard Lion instead.")
+            print(
+                "8bit is not supported by the Lion optimiser, Using standard Lion instead."
+            )
     else:
         raise NotImplementedError(f"{optimizer} optimizer not supported yet.")
     return optim
+
+
 @beartype
 class BaseAcceleratedTrainer(nn.Module):
     def __init__(

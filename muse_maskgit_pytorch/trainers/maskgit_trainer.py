@@ -55,7 +55,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
         only_save_last_checkpoint=False,
         optimizer="Lion",
         weight_decay=0.0,
-        use_8bit_adam=False
+        use_8bit_adam=False,
     ):
         super().__init__(
             dataloader,
@@ -87,7 +87,9 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
         vae_parameters = set(self.model.vae.parameters())
         t5_parameters = set(self.model.transformer.t5.parameters())
         transformer_parameters = all_parameters - vae_parameters - t5_parameters
-        self.optim = get_optimizer(use_8bit_adam, optimizer, transformer_parameters, lr, weight_decay)
+        self.optim = get_optimizer(
+            use_8bit_adam, optimizer, transformer_parameters, lr, weight_decay
+        )
 
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,
@@ -167,7 +169,7 @@ class MaskGitTrainer(BaseAcceleratedTrainer):
             self.lr_scheduler.step()
             self.optim.step()
             self.optim.zero_grad()
-        if self.accelerator.sync_gradients:
+        if self.accelerator.sync_gradients and self.is_main:
             self.steps += 1
             if self.use_ema:
                 ema_model.update()

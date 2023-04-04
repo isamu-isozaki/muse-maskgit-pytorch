@@ -25,6 +25,11 @@ def parse_args():
     # Create the parser
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Whether to stream dataset.",
+    )
+    parser.add_argument(
         "--only_save_last_checkpoint",
         action="store_true",
         help="Only save last checkpoint.",
@@ -281,7 +286,9 @@ def main():
             save_path=args.dataset_save_path,
         )
     elif args.dataset_name:
-        dataset = load_dataset(args.dataset_name)["train"]
+        dataset = load_dataset(args.dataset_name, streaming=args.stream)["train"]
+        if args.stream:
+            dataset = dataset.with_format("torch")
     if args.vae_path and args.taming_model_path:
         raise Exception("You can't pass vae_path and taming args at the same time.")
 
@@ -391,7 +398,7 @@ def main():
         only_save_last_checkpoint=args.only_save_last_checkpoint,
         optimizer=args.optimizer,
         weight_decay=args.weight_decay,
-        use_8bit_adam=args.use_8bit_adam
+        use_8bit_adam=args.use_8bit_adam,
     )
 
     trainer.train()

@@ -21,9 +21,105 @@ import argparse
 import torch.nn as nn
 from accelerate import init_empty_weights
 
+
 def parse_args():
     # Create the parser
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--num_timm_resnet_blocks",
+        type=int,
+        default=0,
+        help="Number of resnet blocks for timm features in encoder"
+    )
+    parser.add_argument(
+        "--num_resnet_blocks",
+        type=int,
+        default=1,
+        help="Number of resnet blocks in encoder/decoder"
+    )
+    parser.add_argument(
+        "--timm_offset",
+        type=int,
+        default=0,
+        help="Offset of the indices in timm so they match up to the layers"
+    )
+    parser.add_argument(
+        "--timm_discr_offset",
+        type=int,
+        default=0,
+        help="Offset of the indices in timm discriminator so they match up to the layers"
+    )
+    parser.add_argument(
+        "--timm_disc_path",
+        type=str,
+        default=None,
+        help="Path to the timm discriminator"
+    )
+    parser.add_argument(
+        "--timm_disc_layers",
+        type=str,
+        default="layer1|layer2",
+        help="The discriminator layers separated by |.",
+    )
+    parser.add_argument(
+        "--timm_discriminator_backend",
+        type=str,
+        default="resnet18",
+        help="Discriminator model for timm.",
+    )
+    parser.add_argument(
+        "--enc_layers",
+        type=str,
+        default="stem|stages|norm_pre",
+        help="The encoded layers in timm separated by |.",
+    )
+    parser.add_argument(
+        "--timm_backend",
+        type=str,
+        default="convnext_base",
+        help="Timm backend used for the encoder.",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Whether to stream dataset.",
+    )
+    parser.add_argument(
+        "--bilinear",
+        action="store_true",
+        help="Whether to do bilinear upsampling instead of conv transpose.",
+    )
+    parser.add_argument(
+        "--pixel_shuffle",
+        action="store_true",
+        help="whether to do pixel shuffling instead of conv transpose.",
+    )
+    parser.add_argument(
+        "--act",
+        type=str,
+        default="leaky_relu",
+        choices=["leaky_relu", "silu"],
+        help="Activation function.",
+    )
+    parser.add_argument(
+        "--layers",
+        type=int,
+        default=4,
+        help="Number of layers used for encoding/decoding.",
+    )
+    parser.add_argument(
+        "--discr_layers",
+        type=int,
+        default=4,
+        help="Number of layers used for the discriminator.",
+    )
+    parser.add_argument(
+        "--enc_dec_class_name",
+        type=str,
+        default="TimmFeatureEncDec",
+        choices=["ResnetEncDec", "TimmFeatureEncDec", "HuggingfaceEncDec"],
+        help="Architecture used for encoding/decoding",
+    )
     parser.add_argument(
         "--webdataset", type=str, default=None, help="Path to webdataset if using one."
     )
@@ -177,6 +273,9 @@ def parse_args():
     )
     parser.add_argument("--vq_codebook_size", type=int, default=256, help="Image Size.")
     parser.add_argument(
+        "--vq_codebook_dim", type=int, default=512, help="Codebook dimension."
+    )
+    parser.add_argument(
         "--image_size",
         type=int,
         default=256,
@@ -201,12 +300,14 @@ def parse_args():
         help="Path to the last saved checkpoint. 'results/vae.steps.pt'",
     )
     parser.add_argument(
-        "--optimizer",type=str,
-        default='Lion',
+        "--optimizer",
+        type=str,
+        default="Lion",
         help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion']. Default: Adam",
     )
     parser.add_argument(
-        "--weight_decay", type=float,
+        "--weight_decay",
+        type=float,
         default=0.0,
         help="Optimizer weight_decay to use. Default: 0.0",
     )
@@ -221,18 +322,6 @@ def parse_args():
         type=str,
         default=None,
         help="path to your trained VQGAN config. This should be a .yaml file. (only valid when taming option is enabled)",
-    )
-    parser.add_argument(
-        "--optimizer",
-        type=str,
-        default="Lion",
-        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion']. Default: Lion",
-    )
-    parser.add_argument(
-        "--weight_decay",
-        type=float,
-        default=0.0,
-        help="Optimizer weight_decay to use. Default: 0.0",
     )
     # Parse the argument
     return parser.parse_args()
@@ -267,9 +356,29 @@ def main():
             save_path=args.dataset_save_path,
         )
     elif args.dataset_name:
-        dataset = load_dataset(args.dataset_name)["train"]
-
-    vae = VQGanVAE(dim=args.dim, vq_codebook_size=args.vq_codebook_size)
+        dataset = load_dataset(args.dataset_name, streaming=args.stream)["train"]
+        if args.stream:
+            dataset = dataset.with_format("torch")
+    vae = VQGanVAE(
+        layers=args.layers,
+        discr_layers=args.discr_layers,
+        dim=args.dim,
+        vq_codebook_size=args.vq_codebook_size,
+        vq_codebook_dim=args.vq_codebook_dim,
+        enc_dec_class_name=args.enc_dec_class_name,
+        bilinear=args.bilinear,
+        pixel_shuffle=args.pixel_shuffle,
+        timm_backend=args.timm_backend,
+        enc_layers=args.enc_layers.split("|"),
+        timm_discriminator_backend=args.timm_discriminator_backend,
+        timm_disc_layers=args.timm_disc_layers.split("|"),
+        timm_disc_path=args.timm_disc_path,
+        timm_discr_offset=args.timm_discr_offset,
+        timm_offset=args.timm_offset,
+        num_resnet_blocks=args.num_resnet_blocks,
+        num_timm_resnet_blocks=args.num_timm_resnet_blocks,
+        image_size=args.image_size
+    )
     if args.taming_model_path:
         print("Loading Taming VQGanVAE")
         vae = VQGanVAETaming(
@@ -306,6 +415,7 @@ def main():
     dataloader, validation_dataloader = split_dataset_into_dataloaders(
         dataset, args.valid_frac, args.seed, args.batch_size
     )
+
     trainer = VQGanVAETrainer(
         vae,
         dataloader,
@@ -332,7 +442,7 @@ def main():
         validation_image_scale=args.validation_image_scale,
         only_save_last_checkpoint=args.only_save_last_checkpoint,
         optimizer=args.optimizer,
-        use_8bit_adam=args.use_8bit_adam
+        use_8bit_adam=args.use_8bit_adam,
     )
 
     trainer.train()

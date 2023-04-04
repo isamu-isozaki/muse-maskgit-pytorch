@@ -74,7 +74,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         only_save_last_checkpoint=False,
         optimizer="Adam",
         weight_decay=0.0,
-        use_8bit_adam=False
+        use_8bit_adam=False,
     ):
         super().__init__(
             dataloader,
@@ -102,8 +102,12 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         vae_parameters = all_parameters - discr_parameters
 
         # optimizers
-        self.optim = get_optimizer(use_8bit_adam, optimizer, vae_parameters, lr, weight_decay)
-
+        self.optim = get_optimizer(
+            use_8bit_adam, optimizer, vae_parameters, lr, weight_decay
+        )
+        self.discr_optim = get_optimizer(
+            use_8bit_adam, optimizer, discr_parameters, lr, weight_decay
+        )
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,
             optimizer=self.optim,
@@ -180,6 +184,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             # else save a grid of images
 
             imgs_and_recons = torch.stack((valid_data, recons), dim=0)
+            imgs_and_recons += 0.5
             imgs_and_recons = rearrange(imgs_and_recons, "r b ... -> (b r) ...")
 
             imgs_and_recons = imgs_and_recons.detach().cpu().float().clamp(0.0, 1.0)
@@ -279,7 +284,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # sample results every so often
 
-        if (steps % self.save_results_every) == 0:
+        if (steps % self.save_results_every) == 0 and self.is_main:
             vaes_to_evaluate = ((self.model, str(steps)),)
 
             if self.use_ema:
@@ -292,7 +297,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # save model every so often
         self.accelerator.wait_for_everyone()
-        if self.is_main and (steps % self.save_model_every) == 0:
+        if (steps % self.save_model_every) == 0 and self.is_main:
             state_dict = self.accelerator.unwrap_model(self.model).state_dict()
             file_name = (
                 f"vae.{steps}.pt" if not self.only_save_last_checkpoint else "vae.pt"
