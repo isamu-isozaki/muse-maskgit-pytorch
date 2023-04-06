@@ -88,15 +88,6 @@ def parse_args():
     parser.add_argument("--use_ema", action="store_true", help="Whether to use ema.")
     parser.add_argument("--ema_beta", type=float, default=0.995, help="Ema beta.")
     parser.add_argument(
-        "--log_with",
-        type=str,
-        default="wandb",
-        help=(
-            'The integration to report the results and logs to. Supported platforms are `"tensorboard"`'
-            ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
-        ),
-    )
-    parser.add_argument(
         "--mixed_precision",
         type=str,
         default="no",
@@ -171,10 +162,7 @@ def parse_args():
 def main():
     args = parse_args()
     accelerator = get_accelerator(
-        log_with=args.log_with,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
-        logging_dir=args.logging_dir,
     )
 
     if args.vae_path and args.taming_model_path:
@@ -235,9 +223,13 @@ def main():
     else:
         accelerator.print("We need a MaskGit model to do inference with. Please provide a path to a checkpoint..")
 
+
+    texts=[args.prompt] if '|' not in args.prompt else str(args.prompt).split("|")
+    print (f"Prompt: {texts}")
+
     # ready your training text and images
     images = maskgit.generate(
-        texts=list(args.prompt) if '|' not in args.prompt else str(args.prompt).split("|"),
+        texts=texts,
         #texts = [
             #'a whale breaching from afar',
             #'young girl blowing out candles on her birthday cake',
@@ -247,7 +239,7 @@ def main():
         timesteps = args.timesteps,
         )
 
-    print(images.shape) # (3, 3, 256, 256)
+    #print(images.shape) # (3, 3, 256, 256)
 
     # save image to disk
     save_path = str(f"{args.results_dir}/result_maskgit.png")
