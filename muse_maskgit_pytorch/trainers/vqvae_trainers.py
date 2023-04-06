@@ -201,7 +201,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             logs["reconstructions"] = grid
             save_file = str(self.results_dir / f"{filename}.png")
             save_image(grid, save_file)
-            log_imgs.append(Image.open(save_file))
+            log_imgs.append(np.asarray(Image.open(save_file)))
         super().log_validation_images(log_imgs, steps, prompts=prompts)
 
     def train_step(self):
