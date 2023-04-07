@@ -243,8 +243,17 @@ class BaseAcceleratedTrainer(nn.Module):
         if prompts:
             self.print(f"\nStep: {step} | Logging with prompts: {prompts}")
         if self.validation_image_scale != 1:
-            # Feel free to make pr for better solution!
-            output_size = (int(images[0].shape[0]*self.validation_image_scale), int(images[0].shape[1]*self.validation_image_scale))
+            # Calculate the new height based on the scale factor
+            new_height = int(images[0].shape[0] * self.validation_image_scale)
+
+            # Calculate the aspect ratio of the original image
+            aspect_ratio = images[0].shape[1] / images[0].shape[0]
+
+            # Calculate the new width based on the new height and aspect ratio
+            new_width = int(new_height * aspect_ratio)
+
+            # Resize the images using the new width and height
+            output_size = (new_width, new_height)
             images_pil = [Image.fromarray(image) for image in images]
             images_pil_resized = [image_pil.resize(output_size) for image_pil in images_pil]
             images = [np.array(image_pil) for image_pil in images_pil_resized]
