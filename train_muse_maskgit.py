@@ -252,13 +252,36 @@ def parse_args():
         "--optimizer",
         type=str,
         default="Lion",
-        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion']. Default: Lion",
+        help="Optimizer to use. Choose between: ['Adam', 'AdamW','Lion', 'Adafactor', 'AdaBound', 'AdaMod', 'AccSGD', 'AdamP', 'AggMo', 'DiffGrad', \
+        'Lamb', 'NovoGrad', 'PID', 'QHAdam', 'QHM', 'RAdam', 'SGDP', 'SGDW', 'Shampoo', 'SWATS', 'Yogi']. Default: Lion",
     )
     parser.add_argument(
         "--weight_decay",
         type=float,
         default=0.0,
         help="Optimizer weight_decay to use. Default: 0.0",
+    )
+    parser.add_argument(
+        "--use_profiling",
+        action="store_true",
+        help="Use Pytorch's built-in profiler to gather information about the training which can help improve speed by checking the impact some options have on the training when enabled.",
+    )
+    parser.add_argument(
+        "--no_cache",
+        action="store_true",
+        help="Do not save the dataset pyarrow cache/files to disk to save disk space and reduce the time it takes to launch the training.",
+    )
+    parser.add_argument(
+        "--profile_frequency",
+        type=int,
+        default=1,
+        help="Number of steps that will be used as interval for saving the profile from Pytorch's built-in profiler.",
+    )
+    parser.add_argument(
+        "--row_limit",
+        type=int,
+        default=10,
+        help="Number of rows that will be shown when using Pytorch's built-in profiler.",
     )
     # Parse the argument
     return parser.parse_args()
@@ -279,6 +302,7 @@ def main():
             image_column=args.image_column,
             caption_column=args.caption_column,
             save_path=args.dataset_save_path,
+            no_cache=args.no_cache if args.no_cache else False,
         )
     elif args.dataset_name:
         dataset = load_dataset(args.dataset_name)["train"]
@@ -358,6 +382,7 @@ def main():
         caption_column=args.caption_column,
         center_crop=not args.no_center_crop,
         flip=not args.no_flip,
+        using_taming=True if args.taming_model_path else False,
     )
     dataloader, validation_dataloader = split_dataset_into_dataloaders(
         dataset, args.valid_frac, args.seed, args.batch_size
@@ -389,6 +414,9 @@ def main():
         clear_previous_experiments=args.clear_previous_experiments,
         validation_image_scale=args.validation_image_scale,
         only_save_last_checkpoint=args.only_save_last_checkpoint,
+        use_profiling=args.use_profiling,
+        profile_frequency=args.profile_frequency,
+        row_limit=args.row_limit,
         optimizer=args.optimizer,
         weight_decay=args.weight_decay,
         use_8bit_adam=args.use_8bit_adam

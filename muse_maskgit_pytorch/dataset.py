@@ -5,7 +5,7 @@ from pathlib import Path
 from muse_maskgit_pytorch.t5 import MAX_LENGTH
 import datasets
 from datasets import Image, load_from_disk
-import random
+import random, shutil
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import os, time, sys
@@ -17,7 +17,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ImageDataset(Dataset):
     def __init__(
-        self, dataset, image_size, image_column="image", flip=True, center_crop=True
+        self, dataset, image_size, image_column="image", flip=True, center_crop=True, using_taming=False,
     ):
         super().__init__()
         self.dataset = dataset
@@ -33,13 +33,17 @@ class ImageDataset(Dataset):
         transform_list.append(T.ToTensor())
         self.transform = T.Compose(transform_list)
 
+        self.using_taming = using_taming
+
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index):
         image = self.dataset[index][self.image_column]
-        return self.transform(image) - 0.5
-
+        if self.using_taming:
+            return self.transform(image)-0.5
+        else:
+            return self.transform(image)
 
 class ImageTextDataset(ImageDataset):
     def __init__(
@@ -51,6 +55,7 @@ class ImageTextDataset(ImageDataset):
         caption_column=None,
         flip=True,
         center_crop=True,
+        using_taming=False,
     ):
         super().__init__(
             dataset,
@@ -58,6 +63,7 @@ class ImageTextDataset(ImageDataset):
             image_column=image_column,
             flip=flip,
             center_crop=center_crop,
+            using_taming=using_taming,
         )
         self.caption_column = caption_column
         self.tokenizer = tokenizer
@@ -118,11 +124,19 @@ def save_dataset_with_progress(dataset, save_path):
 
 
 def get_dataset_from_dataroot(
-    data_root, image_column="image", caption_column="caption", save_path="dataset"
+    data_root, image_column="image", caption_column="caption", save_path="dataset", no_cache=False,
 ):
     # Check if data_root is a symlink and resolve it to its target location if it is
     if os.path.islink(data_root):
         data_root = os.path.realpath(data_root)
+
+    if os.path.exists(save_path):
+        # if the data_root folder is newer than the save_path we reload the
+        if os.stat(save_path).st_mtime - os.stat(data_root).st_mtime > 1:
+            return load_from_disk(save_path)
+        else:
+            print ("The data_root folder has being updated recently. Removing previously saved dataset and updating it.")
+            shutil.rmtree(save_path, ignore_errors=True)
 
     extensions = ["jpg", "jpeg", "png", "webp"]
     image_paths = []
@@ -147,8 +161,10 @@ def get_dataset_from_dataroot(
         data_dict[caption_column].append(captions)
     dataset = datasets.Dataset.from_dict(data_dict)
     dataset = dataset.cast_column(image_column, Image())
-    # dataset.save_to_disk(save_path)
-    save_dataset_with_progress(dataset, save_path)
+    if not no_cache:
+        # dataset.save_to_disk(save_path)
+        save_dataset_with_progress(dataset, save_path)
+
     return dataset
 
 

@@ -27,7 +27,7 @@ from muse_maskgit_pytorch.trainers.base_accelerated_trainer import (
     get_optimizer,
 )
 from diffusers.optimization import get_scheduler
-
+import torchvision.transforms.functional as TF
 
 def noop(*args, **kwargs):
     pass
@@ -54,6 +54,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         *,
         current_step,
         num_train_steps,
+        batch_size,
         gradient_accumulation_steps=1,
         max_grad_norm=None,
         save_results_every=100,
@@ -72,6 +73,9 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
         clear_previous_experiments=False,
         validation_image_scale=1,
         only_save_last_checkpoint=False,
+        use_profiling=False,
+        profile_frequency=1,
+        row_limit=10,
         optimizer="Adam",
         weight_decay=0.0,
         use_8bit_adam=False
@@ -82,6 +86,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             accelerator,
             current_step=current_step,
             num_train_steps=num_train_steps,
+            batch_size=batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
             max_grad_norm=max_grad_norm,
             save_results_every=save_results_every,
@@ -92,7 +97,12 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             clear_previous_experiments=clear_previous_experiments,
             validation_image_scale=validation_image_scale,
             only_save_last_checkpoint=only_save_last_checkpoint,
+            use_profiling=use_profiling,
+            profile_frequency=profile_frequency,
+            row_limit=row_limit,
         )
+
+        self.current_step = current_step
 
         # vae
         self.model = vae
@@ -103,6 +113,7 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # optimizers
         self.optim = get_optimizer(use_8bit_adam, optimizer, vae_parameters, lr, weight_decay)
+        self.discr_optim = get_optimizer(use_8bit_adam, optimizer, discr_parameters, lr, weight_decay)
 
         self.lr_scheduler = get_scheduler(
             lr_scheduler_type,
@@ -178,7 +189,6 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             recons = model(valid_data, return_recons=True)
 
             # else save a grid of images
-
             imgs_and_recons = torch.stack((valid_data, recons), dim=0)
             imgs_and_recons = rearrange(imgs_and_recons, "r b ... -> (b r) ...")
 
@@ -187,11 +197,21 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 imgs_and_recons, nrow=2, normalize=True, value_range=(0, 1)
             )
 
+            # Fix aspect ratio and scale the image size if needed
+            if self.validation_image_scale != 1:
+                img_size = grid.shape[-2:]
+                output_size = (
+                    int(img_size[0] * self.validation_image_scale),
+                    int(img_size[1] * self.validation_image_scale),
+                )
+                grid = TF.resize(grid, output_size)
+
             logs["reconstructions"] = grid
             save_file = str(self.results_dir / f"{filename}.png")
             save_image(grid, save_file)
-            log_imgs.append(Image.open(save_file))
+            log_imgs.append(np.asarray(Image.open(save_file)))
         super().log_validation_images(log_imgs, steps, prompts=prompts)
+
 
     def train_step(self):
         device = self.device
@@ -244,8 +264,8 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 img = next(self.dl_iter)
                 img = img.to(device)
 
-                with torch.cuda.amp.autocast():
-                    loss = self.model(img, return_discr_loss=True)
+                #with torch.cuda.amp.autocast():
+                loss = self.model(img, return_discr_loss=True)
 
                 self.accelerator.backward(loss / self.gradient_accumulation_steps)
 
@@ -266,9 +286,9 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
 
         # log
 
-        self.print(
-            f"{steps}: vae loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {self.lr_scheduler.get_last_lr()[0]}"
-        )
+        #self.print(
+            #f"{steps}: vae loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {self.lr_scheduler.get_last_lr()[0]}"
+        #)
         logs["lr"] = self.lr_scheduler.get_last_lr()[0]
         self.accelerator.log(logs, step=steps)
 
@@ -278,41 +298,46 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             ema_model.update()
 
         # sample results every so often
-
-        if (steps % self.save_results_every) == 0:
-            vaes_to_evaluate = ((self.model, str(steps)),)
+        logs['save_results_every'] = ''
+        if (steps % self.save_results_every) == 1:
+            vaes_to_evaluate = ((self.model, str(steps - 1)),)
 
             if self.use_ema:
                 vaes_to_evaluate = (
-                    (ema_model.ema_model, f"{steps}.ema"),
+                    (ema_model.ema_model, f"{steps - 1}.ema"),
                 ) + vaes_to_evaluate
 
-            self.log_validation_images(vaes_to_evaluate, logs, steps)
-            self.print(f"{steps}: saving to {str(self.results_dir)}")
+            self.log_validation_images(vaes_to_evaluate, logs, steps - 1)
+            #self.print(f"{steps}: saving to {str(self.results_dir)}")
+            logs['save_results_every'] = f"\nStep: {steps - 1} | Saving to {str(self.results_dir)}"
 
         # save model every so often
+        logs['save_model_every'] = ''
         self.accelerator.wait_for_everyone()
-        if self.is_main and (steps % self.save_model_every) == 0:
-            state_dict = self.accelerator.unwrap_model(self.model).state_dict()
-            file_name = (
-                f"vae.{steps}.pt" if not self.only_save_last_checkpoint else "vae.pt"
-            )
-            model_path = str(self.results_dir / file_name)
-            self.accelerator.save(state_dict, model_path)
-
-            if self.use_ema:
-                ema_state_dict = self.accelerator.unwrap_model(
-                    self.ema_model
-                ).state_dict()
+        if steps != self.current_step:
+            if self.is_main and (steps % self.save_model_every) == 1:
+                state_dict = self.accelerator.unwrap_model(self.model).state_dict()
                 file_name = (
-                    f"vae.{steps}.ema.pt"
-                    if not self.only_save_last_checkpoint
-                    else "vae.ema.pt"
+                    f"vae.{steps - 1}.pt" if not self.only_save_last_checkpoint else "vae.pt"
                 )
                 model_path = str(self.results_dir / file_name)
-                self.accelerator.save(ema_state_dict, model_path)
+                self.accelerator.save(state_dict, model_path)
 
-            self.print(f"{steps}: saving model to {str(self.results_dir)}")
+                if self.use_ema:
+                    ema_state_dict = self.accelerator.unwrap_model(
+                        self.ema_model
+                    ).state_dict()
+                    file_name = (
+                        f"vae.{steps -1}.ema.pt"
+                        if not self.only_save_last_checkpoint
+                        else "vae.ema.pt"
+                    )
+                    model_path = str(self.results_dir / file_name)
+                    self.accelerator.save(ema_state_dict, model_path)
 
-        self.steps += 1
+                #self.print(f"{steps}: saving model to {str(self.results_dir)}")
+                logs['save_model_every'] =  f"\nStep: {steps - 1} | Saving model to {str(self.results_dir)}"
+
+        self.steps = self.steps + (self.batch_size * self.gradient_accumulation_steps)
+
         return logs

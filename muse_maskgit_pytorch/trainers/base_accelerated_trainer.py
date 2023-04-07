@@ -15,7 +15,11 @@ import torch.nn.functional as F
 from accelerate import Accelerator, DistributedType, DistributedDataParallelKwargs
 
 from ema_pytorch import EMA
+from tqdm import tqdm
 from torch.optim import Adam, AdamW
+from torch_optimizer import AdaBound, AdaMod, AccSGD, AdamP, AggMo, DiffGrad, \
+     Lamb, NovoGrad, PID, QHAdam, QHM, RAdam, SGDP, SGDW, Shampoo, SWATS, Yogi
+from transformers.optimization import Adafactor
 from lion_pytorch import Lion
 
 import numpy as np
@@ -36,12 +40,10 @@ def noop(*args, **kwargs):
 def identity(t, *args, **kwargs):
     return t
 
-
 def cycle(dl):
     while True:
         for data in dl:
             yield data
-
 
 def cast_tuple(t):
     return t if isinstance(t, (tuple, list)) else (t,)
@@ -50,7 +52,6 @@ def cast_tuple(t):
 def yes_or_no(question):
     answer = input(f"{question} (y/n) ")
     return answer.lower() in ("yes", "y")
-
 
 def pair(val):
     return val if isinstance(val, tuple) else (val, val)
@@ -61,9 +62,7 @@ def convert_image_to_fn(img_type, image):
         return image.convert(img_type)
     return image
 
-
 # image related helpers fnuctions and dataset
-
 
 def get_accelerator(**accelerate_kwargs):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -74,7 +73,6 @@ def get_accelerator(**accelerate_kwargs):
 
     accelerator = Accelerator(**accelerate_kwargs)
     return accelerator
-
 
 def split_dataset(dataset, valid_frac, accelerator, seed=42):
     if valid_frac > 0:
@@ -121,6 +119,42 @@ def get_optimizer(use_8bit_adam, optimizer, parameters, lr, weight_decay):
         optim = Lion(parameters, lr=lr, weight_decay=weight_decay)
         if use_8bit_adam:
             print("8bit is not supported by the Lion optimiser, Using standard Lion instead.")
+    elif optimizer == "Adafactor":
+        optim = Adafactor(parameters, lr=lr, weight_decay=weight_decay, relative_step=False)
+    elif optimizer == "AccSGD":
+        optim = AccSGD(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdaBound":
+        optim = AdaBound(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdaMod":
+        optim = AdaMod(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AdamP":
+        optim = AdamP(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "AggMo":
+        optim = AggMo(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "DiffGrad":
+        optim = DiffGrad(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "Lamb":
+        optim = Lamb(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "NovoGrad":
+        optim = NovoGrad(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "PID":
+        optim = PID(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "QHAdam":
+        optim = QHAdam(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "QHM":
+        optim = QHM(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "RAdam":
+        optim = RAdam(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "SGDP":
+        optim = SGDP(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "SGDW":
+        optim = SGDW(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "Shampoo":
+        optim = Shampoo(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "SWATS":
+        optim = SWATS(parameters, lr=lr, weight_decay=weight_decay)
+    elif optimizer == "Yogi":
+        optim = Yogi(parameters, lr=lr, weight_decay=weight_decay)
     else:
         raise NotImplementedError(f"{optimizer} optimizer not supported yet.")
     return optim
@@ -140,14 +174,19 @@ class BaseAcceleratedTrainer(nn.Module):
         results_dir="./results",
         logging_dir="./results/logs",
         apply_grad_penalty_every=4,
+        batch_size=1,
         gradient_accumulation_steps=1,
         clear_previous_experiments=False,
         validation_image_scale=1,
         only_save_last_checkpoint=False,
+        use_profiling=False,
+        profile_frequency=1,
+        row_limit=10,
     ):
         super().__init__()
         self.model = None
         # instantiate accelerator
+        self.batch_size = batch_size
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.accelerator = accelerator
         self.results_dir = Path(results_dir)
@@ -175,6 +214,10 @@ class BaseAcceleratedTrainer(nn.Module):
 
         self.apply_grad_penalty_every = apply_grad_penalty_every
 
+        self.use_profiling = use_profiling
+        self.profile_frequency =  profile_frequency
+        self.row_limit = row_limit
+
     def save(self, path):
         if not self.is_local_main_process:
             return
@@ -198,15 +241,23 @@ class BaseAcceleratedTrainer(nn.Module):
 
     def log_validation_images(self, images, step, prompts=None):
         if prompts:
-            self.print(f"Logging with prompts: {prompts}")
+            self.print(f"\nStep: {step} | Logging with prompts: {prompts}")
         if self.validation_image_scale != 1:
-            # Feel free to make pr for better solution!
-            output_size = (
-                int(images[0].size[0] * self.validation_image_scale),
-                int(images[0].size[1] * self.validation_image_scale),
-            )
-            for i in range(len(images)):
-                images[i] = images[i].resize(output_size)
+            # Calculate the new height based on the scale factor
+            new_height = int(images[0].shape[0] * self.validation_image_scale)
+
+            # Calculate the aspect ratio of the original image
+            aspect_ratio = images[0].shape[1] / images[0].shape[0]
+
+            # Calculate the new width based on the new height and aspect ratio
+            new_width = int(new_height * aspect_ratio)
+
+            # Resize the images using the new width and height
+            output_size = (new_width, new_height)
+            images_pil = [Image.fromarray(image) for image in images]
+            images_pil_resized = [image_pil.resize(output_size) for image_pil in images_pil]
+            images = [np.array(image_pil) for image_pil in images_pil_resized]
+
         for tracker in self.accelerator.trackers:
             if tracker.name == "tensorboard":
                 np_images = np.stack([np.asarray(img) for img in images])
@@ -266,8 +317,58 @@ class BaseAcceleratedTrainer(nn.Module):
 
     def train(self, log_fn=noop):
         self.model.train()
+
+        # create two tqdm objects, one for showing the progress bar
+        # and another one for showing any extra information we want to show on a different line.
+        pbar = tqdm(initial=int(self.steps.item()), total=self.num_train_steps)
+        info_bar = tqdm(total=0, bar_format='{desc}')
+        #profiling_bar = tqdm(total=0, bar_format='{desc}')
+
+
+        # use pytorch built-in profiler to gather information on the training for improving performance later.
+        #with torch.autograd.profiler.profile(use_cuda=True) as prof:
+        if self.use_profiling:
+            prof = torch.autograd.profiler.profile(use_cuda=True)
+            prof.__enter__()
+            counter = 1
+
         while self.steps < self.num_train_steps:
-            with self.accelerator.autocast():
-                logs = self.train_step()
-            log_fn(logs)
+                with self.accelerator.autocast():
+                    logs = self.train_step()
+                log_fn(logs)
+
+                # update the tqdm progress bar
+                pbar.update(self.batch_size * self.gradient_accumulation_steps)
+
+                # show some extra information on the tqdm progress bar.
+                #pbar.set_postfix_str(f"Step: {int(self.steps.item())}")
+                #print (logs)
+                if logs:
+                    try:
+                        info_bar.set_description_str(f"Loss: {logs['loss']}, lr: {logs['lr']}")
+                        print(logs['save_model_every']) if logs['save_model_every'] else None
+                        print(logs['save_results_every']) if logs['save_model_every'] else None
+                    except KeyError:
+                        info_bar.set_description_str(f"VAE loss: {logs['Train/vae_loss']} - discr loss: {logs['Train/discr_loss']} - lr: {logs['lr']}")
+                        print(logs['save_model_every']) if logs['save_model_every'] else None
+                        print(logs['save_results_every']) if logs['save_model_every'] else None
+
+                    if self.use_profiling:
+                        counter += 1
+                        if counter == self.profile_frequency:
+                            # in order to use export_chrome_trace we need to first stop the profiler
+                            prof.__exit__(None, None, None)
+                            # show the information on the console using loguru as it provides better formating and we can later add colors for easy reading.
+                            from loguru import logger
+                            logger.info(prof.key_averages().table(sort_by='cpu_time_total', row_limit=self.row_limit))
+                            # save the trace.json file with the information we gathered during this training step,
+                            # we can use this trace.json file on the chrome tracing page or other similar tool to view more information.
+                            prof.export_chrome_trace(f'{self.logging_dir}/trace.json')
+                            # then we can restart it to continue reusing the same profiler.
+                            prof = torch.autograd.profiler.profile(use_cuda=True)
+                            prof.__enter__()
+                            counter = 1 # Reset step counter
+
+        # close the progress bar as we no longer need it.
+        pbar.close()
         self.print("training complete")
