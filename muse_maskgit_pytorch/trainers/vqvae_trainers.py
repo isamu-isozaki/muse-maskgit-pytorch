@@ -27,7 +27,7 @@ from muse_maskgit_pytorch.trainers.base_accelerated_trainer import (
     get_optimizer,
 )
 from diffusers.optimization import get_scheduler
-
+import torchvision.transforms.functional as TF
 
 def noop(*args, **kwargs):
     pass
@@ -189,7 +189,6 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
             recons = model(valid_data, return_recons=True)
 
             # else save a grid of images
-
             imgs_and_recons = torch.stack((valid_data, recons), dim=0)
             imgs_and_recons = rearrange(imgs_and_recons, "r b ... -> (b r) ...")
 
@@ -198,11 +197,21 @@ class VQGanVAETrainer(BaseAcceleratedTrainer):
                 imgs_and_recons, nrow=2, normalize=True, value_range=(0, 1)
             )
 
+            # Fix aspect ratio and scale the image size if needed
+            if self.validation_image_scale != 1:
+                img_size = grid.shape[-2:]
+                output_size = (
+                    int(img_size[0] * self.validation_image_scale),
+                    int(img_size[1] * self.validation_image_scale),
+                )
+                grid = TF.resize(grid, output_size)
+
             logs["reconstructions"] = grid
             save_file = str(self.results_dir / f"{filename}.png")
             save_image(grid, save_file)
             log_imgs.append(np.asarray(Image.open(save_file)))
         super().log_validation_images(log_imgs, steps, prompts=prompts)
+
 
     def train_step(self):
         device = self.device
