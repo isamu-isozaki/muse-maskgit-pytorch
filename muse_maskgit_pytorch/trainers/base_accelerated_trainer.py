@@ -244,12 +244,11 @@ class BaseAcceleratedTrainer(nn.Module):
             self.print(f"\nStep: {step} | Logging with prompts: {prompts}")
         if self.validation_image_scale != 1:
             # Feel free to make pr for better solution!
-            output_size = (
-                int(images[0].size[0] * self.validation_image_scale),
-                int(images[0].size[1] * self.validation_image_scale),
-            )
-            for i in range(len(images)):
-                images[i] = images[i].resize(output_size)
+            output_size = (int(images[0].shape[0]*self.validation_image_scale), int(images[0].shape[1]*self.validation_image_scale))
+            images_pil = [Image.fromarray(image) for image in images]
+            images_pil_resized = [image_pil.resize(output_size) for image_pil in images_pil]
+            images = [np.array(image_pil) for image_pil in images_pil_resized]
+
         for tracker in self.accelerator.trackers:
             if tracker.name == "tensorboard":
                 np_images = np.stack([np.asarray(img) for img in images])
