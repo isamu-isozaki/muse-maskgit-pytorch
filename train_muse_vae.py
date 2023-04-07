@@ -230,6 +230,11 @@ def parse_args():
         help="Use Pytorch's built-in profiler to gather information about the training which can help improve speed by checking the impact some options have on the training when enabled.",
     )
     parser.add_argument(
+        "--no_cache",
+        action="store_true",
+        help="Do not save the dataset pyarrow cache/files to disk to save disk space and reduce the time it takes to launch the training.",
+    )
+    parser.add_argument(
         "--profile_frequency",
         type=int,
         default=1,
@@ -272,6 +277,7 @@ def main():
             image_column=args.image_column,
             caption_column=args.caption_column,
             save_path=args.dataset_save_path,
+            no_cache=args.no_cache if args.no_cache else False,
         )
     elif args.dataset_name:
         dataset = load_dataset(args.dataset_name)["train"]

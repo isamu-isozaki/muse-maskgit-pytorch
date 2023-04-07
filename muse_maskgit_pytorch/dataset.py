@@ -124,7 +124,7 @@ def save_dataset_with_progress(dataset, save_path):
 
 
 def get_dataset_from_dataroot(
-    data_root, image_column="image", caption_column="caption", save_path="dataset"
+    data_root, image_column="image", caption_column="caption", save_path="dataset", no_cache=False,
 ):
     # Check if data_root is a symlink and resolve it to its target location if it is
     if os.path.islink(data_root):
@@ -161,8 +161,10 @@ def get_dataset_from_dataroot(
         data_dict[caption_column].append(captions)
     dataset = datasets.Dataset.from_dict(data_dict)
     dataset = dataset.cast_column(image_column, Image())
-    # dataset.save_to_disk(save_path)
-    save_dataset_with_progress(dataset, save_path)
+    if not no_cache:
+        # dataset.save_to_disk(save_path)
+        save_dataset_with_progress(dataset, save_path)
+
     return dataset
 
 
